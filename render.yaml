@@ -1,0 +1,28 @@
+services:
+  # ── Backend API ───────────────────────────────────────────────────────────────
+  - type: web
+    name: finpulse-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+    plan: free
+
+  # ── Frontend Dashboard ────────────────────────────────────────────────────────
+  - type: web
+    name: finpulse-dashboard
+    runtime: python
+    rootDir: frontend
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --server.enableCORS false --server.enableXsrfProtection false
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      # Point the frontend at the deployed backend URL
+      # Update this after your first backend deploy
+      - key: API_URL
+        value: "https://finpulse-api.onrender.com"
+    plan: free

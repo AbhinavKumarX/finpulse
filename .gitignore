@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+.venv
+venv/
+env/
+ENV/
+.python-version
+pip-log.txt
+
+# SQLite databases (keep schema, not data — comment out if you want to commit the DB)
+*.db
+*.sqlite
+*.sqlite3
+
+# Streamlit
+.streamlit/secrets.toml
+.streamlit/credentials.toml
+
+# Temporary / debug scripts
+check_*.py
+dump_*.py
+find_*.py
+get_*.py
+inspect_*.py
+patch_*.py
+print_*.py
+screenshot*.py
+screenshot*.png
+screenshot_after.png
+take_screenshot.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
