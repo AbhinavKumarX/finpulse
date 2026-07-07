@@ -1,5 +1,6 @@
 import os, sqlite3, json
 import streamlit as st
+from st_keyup import st_keyup
 import streamlit.components.v1 as components
 import pandas as pd
 import plotly.graph_objects as plgo
@@ -433,8 +434,8 @@ with h1:
     </div>""", unsafe_allow_html=True)
 
 with h2:
-    search_q = st.text_input("search", placeholder="🔍  Search and add stocks — e.g. RELIANCE, TCS, INFY...",
-                             label_visibility="collapsed", key="search_q_input")
+    search_q = st_keyup("search", placeholder="🔍  Search and add stocks — e.g. RELIANCE, TCS, INFY...",
+                        label_visibility="collapsed", key="search_q_input", debounce=250)
 
 with h3:
     theme_icon = "🌞 Light Mode" if st.session_state['theme'] == 'dark' else "🌙 Dark Mode"
