@@ -3,7 +3,7 @@
 > **Indian Stock Market Intelligence & Monitoring Platform**  
 > Track, analyze, and compare NSE-listed stocks with real-time market data, interactive charts, AI Copilot insights, and a per-user portfolio tracker.
 
-[![Live App](https://img.shields.io/badge/Live%20App-finpulse99.streamlit.app-brightgreen?style=for-the-badge&logo=streamlit)](https://finpulse99.streamlit.app/?t=c6e09a4bec326fed32afa9672503b2599b7bc4c61c09f7626dbebdef3ca1cbc7)
+[![Live App](https://img.shields.io/badge/Live%20App-finpulse99.streamlit.app-brightgreen?style=for-the-badge&logo=streamlit)](https://finpulse99.streamlit.app)
 [![GitHub Repo](https://img.shields.io/badge/GitHub-AbhinavKumarX%2Ffinpulse-blue?style=for-the-badge&logo=github)](https://github.com/AbhinavKumarX/finpulse)
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue) ![Streamlit](https://img.shields.io/badge/Streamlit-1.35+-red) ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green) ![SQLite](https://img.shields.io/badge/Database-SQLite-lightgrey)
@@ -12,8 +12,7 @@
 
 ## 🌐 Live Application
 
-- **Production URL**: [https://finpulse99.streamlit.app](https://finpulse99.streamlit.app)
-- **Demo Session Link**: [https://finpulse99.streamlit.app/?t=c6e09a4bec326fed32afa9672503b2599b7bc4c61c09f7626dbebdef3ca1cbc7](https://finpulse99.streamlit.app/?t=c6e09a4bec326fed32afa9672503b2599b7bc4c61c09f7626dbebdef3ca1cbc7)
+- **Production App**: [https://finpulse99.streamlit.app](https://finpulse99.streamlit.app)
 - **GitHub Repository**: [https://github.com/AbhinavKumarX/finpulse](https://github.com/AbhinavKumarX/finpulse)
 
 ---
