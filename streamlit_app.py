@@ -1,4 +1,15 @@
-import os, sqlite3, json
+"""
+FinPulse — Indian Stock Market Intelligence Platform
+Monolith version: Streamlit + backend functions called directly (no HTTP layer).
+The FastAPI backend in backend/ still provides valid REST endpoints for local/demo use.
+Deployed on Streamlit Community Cloud — completely free, no card needed.
+"""
+import sys
+import os
+
+# Make backend importable regardless of where Streamlit runs from
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
+
 import streamlit as st
 from st_keyup import st_keyup
 import streamlit.components.v1 as components
@@ -6,321 +17,171 @@ import pandas as pd
 import plotly.graph_objects as plgo
 import plotly.express as px
 from plotly.subplots import make_subplots
-import yfinance as yf
-import requests as _req
 
+# Backend modules — called directly, no HTTP
+import database
+import fetcher
+
+# ─────────────────────────────────────────────────────────────────────────────
+# App Config
+# ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="FinPulse – Indian Markets",
+    page_title="FinPulse — Indian Markets",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# ─── Theme ────────────────────────────────────────────────────────────────────
-if 'theme' not in st.session_state:
-    st.session_state['theme'] = 'dark'
+# Initialise DB on startup
+database.init_db()
 
-def toggle_theme():
-    st.session_state['theme'] = 'light' if st.session_state['theme'] == 'dark' else 'dark'
+# ─────────────────────────────────────────────────────────────────────────────
+# Theme System
+# ─────────────────────────────────────────────────────────────────────────────
+if "theme" not in st.session_state:
+    st.session_state["theme"] = "dark"
 
-themes = {
-    'dark': {
-        'bg': '#090d16', 'card_bg': '#111827', 'border': '#1c2333',
-        'text_main': '#f1f5f9', 'text_sub': '#9ca3af', 'text_muted': '#4b5563',
-        'primary': '#3b82f6', 'hover_bg': '#0f172a', 'green': '#22c55e', 'red': '#ef4444'
+T = {
+    "dark": {
+        "bg": "#07090f", "card": "#0f1420", "sidebar": "#0b0f1a",
+        "border": "#1a2035", "border2": "#243050",
+        "text": "#e8edf5", "sub": "#8892a4", "muted": "#3d4a5c",
+        "primary": "#4f8ef7", "primary_dim": "rgba(79,142,247,.12)",
+        "green": "#2ecc71", "red": "#e74c3c",
+        "green_dim": "rgba(46,204,113,.12)", "red_dim": "rgba(231,76,60,.12)",
+        "accent": "#7c5cfc", "accent_dim": "rgba(124,92,252,.12)",
+        "gold": "#f0a500",
     },
-    'light': {
-        'bg': '#f8fafc', 'card_bg': '#ffffff', 'border': '#e2e8f0',
-        'text_main': '#0f172a', 'text_sub': '#475569', 'text_muted': '#94a3b8',
-        'primary': '#2563eb', 'hover_bg': '#f1f5f9', 'green': '#16a34a', 'red': '#dc2626'
+    "light": {
+        "bg": "#f3f6fb", "card": "#ffffff", "sidebar": "#eaeef5",
+        "border": "#dde3ef", "border2": "#c8d0e0",
+        "text": "#111827", "sub": "#4b5563", "muted": "#9ca3af",
+        "primary": "#2563eb", "primary_dim": "rgba(37,99,235,.08)",
+        "green": "#16a34a", "red": "#dc2626",
+        "green_dim": "rgba(22,163,74,.1)", "red_dim": "rgba(220,38,38,.1)",
+        "accent": "#6d28d9", "accent_dim": "rgba(109,40,217,.1)",
+        "gold": "#d97706",
     }
 }
-t = themes[st.session_state['theme']]
-BG = t['bg']
+t = T[st.session_state["theme"]]
 
-st.markdown(f'''
+# ─────────────────────────────────────────────────────────────────────────────
+# Global CSS
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 *, *::before, *::after {{ font-family: 'Inter', sans-serif !important; box-sizing: border-box; }}
-.stApp {{ background: {t["bg"]} !important; }}
-[data-testid="stAppViewContainer"] {{ background: {t["bg"]} !important; }}
+
+.stApp, [data-testid="stAppViewContainer"],
 [data-testid="stAppViewContainer"] > section > div {{ background: {t["bg"]} !important; }}
-.main .block-container {{ padding: 1rem 2rem 2rem !important; max-width: 100% !important; }}
+.main .block-container {{ padding: 0.75rem 1.75rem 2rem !important; max-width: 100% !important; }}
+
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"],
-#MainMenu, footer, header, [data-testid="stToolbar"], [data-testid="stDecoration"] {{ display: none !important; }}
+#MainMenu, footer, header, [data-testid="stToolbar"],
+[data-testid="stDecoration"] {{ display: none !important; }}
+
 [data-testid="stMetric"] {{
-    background: {t["card_bg"]} !important; border: 1px solid {t["border"]} !important;
-    border-radius: 12px !important; padding: 16px 18px 14px !important; transition: border-color .2s !important;
+    background: {t["card"]} !important; border: 1px solid {t["border"]} !important;
+    border-radius: 14px !important; padding: 16px 18px 14px !important;
+    transition: border-color .2s, transform .15s !important;
 }}
-[data-testid="stMetric"]:hover {{ border-color: {t["primary"]} !important; }}
+[data-testid="stMetric"]:hover {{
+    border-color: {t["primary"]} !important; transform: translateY(-1px) !important;
+}}
 [data-testid="stMetricLabel"] > div {{
-    font-size: 10px !important; font-weight: 700 !important;
-    letter-spacing: .08em !important; text-transform: uppercase !important; color: {t["text_muted"]} !important;
+    font-size: 9.5px !important; font-weight: 800 !important;
+    letter-spacing: .1em !important; text-transform: uppercase !important;
+    color: {t["muted"]} !important;
 }}
-[data-testid="stMetricValue"] > div {{ font-size: 19px !important; font-weight: 800 !important; color: {t["text_main"]} !important; }}
+[data-testid="stMetricValue"] > div {{
+    font-size: 18px !important; font-weight: 800 !important; color: {t["text"]} !important;
+}}
+[data-testid="stMetricDelta"] > div {{ font-size: 11px !important; }}
+
 [data-testid="stTabs"] [role="tablist"] {{
-    border-bottom: 1px solid {t["border"]} !important; gap: 0 !important;
-    background: transparent !important; margin-bottom: 15px !important;
+    border-bottom: 1px solid {t["border"]} !important;
+    gap: 0 !important; background: transparent !important; margin-bottom: 18px !important;
 }}
 [data-testid="stTabs"] button[role="tab"] {{
-    background: transparent !important; color: {t["text_sub"]} !important;
+    background: transparent !important; color: {t["sub"]} !important;
     border: none !important; border-bottom: 2px solid transparent !important;
-    border-radius: 0 !important; font-size: 13px !important; font-weight: 600 !important; padding: 8px 20px !important;
+    border-radius: 0 !important; font-size: 12.5px !important;
+    font-weight: 700 !important; padding: 10px 22px !important;
 }}
-[data-testid="stTabs"] button[aria-selected="true"] {{ color: {t["primary"]} !important; border-bottom-color: {t["primary"]} !important; }}
-[data-testid="stTabs"] button:hover {{ color: {t["text_main"]} !important; }}
+[data-testid="stTabs"] button[aria-selected="true"] {{
+    color: {t["primary"]} !important; border-bottom-color: {t["primary"]} !important;
+}}
+[data-testid="stTabs"] button:hover {{ color: {t["text"]} !important; }}
+
 .stButton > button {{
-    background: {t["card_bg"]} !important; color: {t["text_main"]} !important;
-    border: 1px solid {t["border"]} !important; border-radius: 8px !important;
-    font-size: 11px !important; font-weight: 600 !important; padding: 4px 10px !important; width: 100% !important;
+    background: {t["card"]} !important; color: {t["text"]} !important;
+    border: 1px solid {t["border"]} !important; border-radius: 9px !important;
+    font-size: 11.5px !important; font-weight: 700 !important;
+    padding: 5px 12px !important; width: 100% !important;
+    transition: border-color .15s, background .15s !important;
 }}
-.stButton > button:hover {{ border-color: {t["primary"]} !important; }}
+.stButton > button:hover {{
+    border-color: {t["primary"]} !important; background: {t["primary_dim"]} !important;
+}}
+
 .stTextInput > label {{ display: none !important; }}
 .stTextInput > div > div {{
-    background: {t["card_bg"]} !important; border: 1px solid {t["border"]} !important; border-radius: 9px !important;
+    background: {t["card"]} !important; border: 1px solid {t["border"]} !important;
+    border-radius: 10px !important;
 }}
-.stTextInput input {{ color: {t["text_main"]} !important; font-size: 13px !important; }}
-.stTextInput input::placeholder {{ color: {t["text_muted"]} !important; }}
+.stTextInput input {{ color: {t["text"]} !important; font-size: 14px !important; }}
+.stTextInput input::placeholder {{ color: {t["muted"]} !important; }}
+
+[data-testid="stSelectbox"] > label {{
+    font-size: 10px !important; color: {t["muted"]} !important;
+    font-weight: 800 !important; text-transform: uppercase !important; letter-spacing: .08em !important;
+}}
+[data-testid="stSelectbox"] > div > div {{
+    background: {t["card"]} !important; border: 1px solid {t["border"]} !important;
+    border-radius: 10px !important; color: {t["text"]} !important;
+}}
+
 [data-testid="stRadio"] > label {{ display: none !important; }}
-[data-testid="stRadio"] > div {{ gap: 4px !important; }}
+[data-testid="stRadio"] > div {{ gap: 6px !important; }}
 [data-testid="stRadio"] > div > label {{
-    background: {t["card_bg"]} !important; border: 1px solid {t["border"]} !important;
-    border-radius: 8px !important; padding: 4px 12px !important;
-    font-size: 11px !important; font-weight: 600 !important; color: {t["text_muted"]} !important; cursor: pointer !important;
+    background: {t["card"]} !important; border: 1px solid {t["border"]} !important;
+    border-radius: 8px !important; padding: 4px 14px !important;
+    font-size: 11px !important; font-weight: 700 !important;
+    color: {t["muted"]} !important; cursor: pointer !important;
+    transition: all .15s !important;
 }}
 [data-testid="stRadio"] > div > label:has(input:checked) {{
-    border-color: {t["primary"]} !important; color: {t["primary"]} !important; background: {t["bg"]} !important;
+    border-color: {t["primary"]} !important; color: {t["primary"]} !important;
+    background: {t["primary_dim"]} !important;
 }}
-[data-testid="stCheckbox"] label {{ font-size: 11px !important; color: {t["text_muted"]} !important; }}
-[data-testid="stSelectbox"] > div > div {{
-    background: {t["card_bg"]} !important; border: 1px solid {t["border"]} !important;
-    border-radius: 9px !important; color: {t["text_main"]} !important;
+
+[data-testid="stCheckbox"] label {{
+    font-size: 11px !important; color: {t["muted"]} !important; font-weight: 600 !important;
+}}
+[data-testid="stNumberInput"] > label, [data-testid="stSlider"] > label {{
+    font-size: 10px !important; color: {t["muted"]} !important;
+    text-transform: uppercase !important; letter-spacing: .08em !important; font-weight: 800 !important;
 }}
 [data-testid="stNumberInput"] > div > div {{
-    background: {t["card_bg"]} !important; border-color: {t["border"]} !important; border-radius: 9px !important;
+    background: {t["card"]} !important; border-color: {t["border"]} !important; border-radius: 10px !important;
 }}
-[data-testid="stNumberInput"] input {{ color: {t["text_main"]} !important; }}
-hr {{ border-color: {t["border"]} !important; margin: 10px 0 !important; }}
+[data-testid="stNumberInput"] input {{ color: {t["text"]} !important; }}
+
+[data-testid="stDataFrame"] iframe {{ border-radius: 12px !important; }}
+hr {{ border-color: {t["border"]} !important; margin: 12px 0 !important; }}
 [data-testid="stAlert"] {{
-    background: {t["card_bg"]} !important; border-color: {t["border"]} !important; border-radius: 10px !important;
+    background: {t["card"]} !important; border-color: {t["border"]} !important; border-radius: 12px !important;
 }}
-::-webkit-scrollbar {{ width: 5px; }}
+::-webkit-scrollbar {{ width: 4px; height: 4px; }}
 ::-webkit-scrollbar-track {{ background: transparent; }}
-::-webkit-scrollbar-thumb {{ background: {t["border"]}; border-radius: 4px; }}
+::-webkit-scrollbar-thumb {{ background: {t["border2"]}; border-radius: 4px; }}
 </style>
-''', unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-
-# ─── SQLite DB (local persistence) ───────────────────────────────────────────
-DB_PATH = os.path.join(os.path.dirname(__file__), "finpulse.db")
-
-def _conn():
-    c = sqlite3.connect(DB_PATH, check_same_thread=False)
-    c.row_factory = sqlite3.Row
-    return c
-
-def init_db():
-    with _conn() as c:
-        c.execute("""CREATE TABLE IF NOT EXISTS tickers (
-            ticker TEXT PRIMARY KEY, added_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
-        c.execute("""CREATE TABLE IF NOT EXISTS fundamentals (
-            ticker TEXT PRIMARY KEY, data JSON, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
-        c.execute("""CREATE TABLE IF NOT EXISTS history (
-            ticker TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL, volume INTEGER,
-            PRIMARY KEY (ticker, date))""")
-
-init_db()
-
-def db_get_tickers():
-    with _conn() as c:
-        return [r['ticker'] for r in c.execute("SELECT ticker FROM tickers ORDER BY added_at").fetchall()]
-
-def db_add_ticker(ticker):
-    with _conn() as c:
-        c.execute("INSERT OR IGNORE INTO tickers (ticker) VALUES (?)", (ticker,))
-
-def db_remove_ticker(ticker):
-    with _conn() as c:
-        c.execute("DELETE FROM tickers WHERE ticker=?", (ticker,))
-        c.execute("DELETE FROM fundamentals WHERE ticker=?", (ticker,))
-        c.execute("DELETE FROM history WHERE ticker=?", (ticker,))
-
-def db_upsert_fundamentals(ticker, data):
-    with _conn() as c:
-        c.execute("""INSERT INTO fundamentals (ticker, data, updated_at)
-                     VALUES (?,?, CURRENT_TIMESTAMP)
-                     ON CONFLICT(ticker) DO UPDATE SET data=excluded.data, updated_at=CURRENT_TIMESTAMP""",
-                  (ticker, json.dumps(data)))
-
-def db_get_fundamentals(ticker=None):
-    with _conn() as c:
-        if ticker:
-            row = c.execute("SELECT data FROM fundamentals WHERE ticker=?", (ticker,)).fetchone()
-            return json.loads(row['data']) if row else None
-        rows = c.execute("SELECT data FROM fundamentals").fetchall()
-        return [json.loads(r['data']) for r in rows]
-
-def db_upsert_history(ticker, records):
-    with _conn() as c:
-        c.executemany("""INSERT OR REPLACE INTO history (ticker,date,open,high,low,close,volume)
-                         VALUES (:ticker,:date,:open,:high,:low,:close,:volume)""",
-                      [{**r, 'ticker': ticker} for r in records])
-
-def db_get_history(ticker):
-    with _conn() as c:
-        rows = c.execute("SELECT date,open,high,low,close,volume FROM history WHERE ticker=? ORDER BY date",
-                         (ticker,)).fetchall()
-        return [dict(r) for r in rows]
-
-
-# ─── yfinance helpers ─────────────────────────────────────────────────────────
-def _fetch_fundamentals(ticker):
-    info = yf.Ticker(ticker).info
-    div_y = info.get("dividendYield") or info.get("trailingAnnualDividendYield") or 0
-    if div_y > 0.15:
-        div_y /= 100
-    return {
-        "ticker": ticker,
-        "name": info.get("shortName") or info.get("longName") or ticker,
-        "sector": info.get("sector") or "Unknown",
-        "market_cap": info.get("marketCap") or 0,
-        "pe_ratio": info.get("trailingPE") or info.get("forwardPE") or 0,
-        "eps": info.get("trailingEps") or 0,
-        "current_price": info.get("currentPrice") or info.get("regularMarketPrice") or 0,
-        "pb_ratio": info.get("priceToBook") or 0,
-        "roe": info.get("returnOnEquity") or 0,
-        "roce": info.get("returnOnAssets") or 0,
-        "high_52w": info.get("fiftyTwoWeekHigh") or 0,
-        "low_52w": info.get("fiftyTwoWeekLow") or 0,
-        "dividend_yield": div_y,
-        "beta": info.get("beta") or 0,
-        "target_price": info.get("targetMeanPrice") or 0,
-        "recommendation": info.get("recommendationKey") or "N/A",
-        "day_change_pct": info.get("regularMarketChangePercent") or 0,
-        "volume": info.get("regularMarketVolume") or 0,
-        "avg_volume": info.get("averageVolume") or 0,
-        "currency": info.get("financialCurrency") or info.get("currency") or "INR",
-    }
-
-def _fetch_history(ticker):
-    hist = yf.Ticker(ticker).history(period="5y")
-    if hist.empty: return []
-    hist.reset_index(inplace=True)
-    if hist['Date'].dt.tz is not None:
-        hist['Date'] = hist['Date'].dt.tz_localize(None)
-    hist['Date'] = hist['Date'].dt.strftime('%Y-%m-%d')
-    return [{"date": r['Date'], "open": float(r.get('Open',0) or 0),
-             "high": float(r.get('High',0) or 0), "low": float(r.get('Low',0) or 0),
-             "close": float(r.get('Close',0) or 0), "volume": int(r.get('Volume',0) or 0)}
-            for _, r in hist.iterrows()]
-
-def _fetch_indices():
-    INDICES = {"^NSEI":"NIFTY 50","^BSESN":"SENSEX","^NSEBANK":"NIFTY BANK","BTC-INR":"Bitcoin (INR)"}
-    results = []
-    for sym, name in INDICES.items():
-        try:
-            info = yf.Ticker(sym).info
-            results.append({"symbol": sym, "name": name,
-                            "price": info.get("currentPrice") or info.get("regularMarketPrice") or 0,
-                            "change": info.get("regularMarketChange") or 0,
-                            "change_pct": info.get("regularMarketChangePercent") or 0})
-        except: pass
-    return results
-
-def _fetch_news(ticker):
-    try:
-        raw = yf.Ticker(ticker).news or []
-        out = []
-        for item in raw:
-            c = item.get("content", item)
-            title = c.get("title")
-            link  = (c.get("canonicalUrl") or {}).get("url") or (c.get("clickThroughUrl") or {}).get("url") or c.get("link")
-            pub   = (c.get("provider") or {}).get("displayName") or c.get("publisher") or "Yahoo Finance"
-            if title and link:
-                out.append({"title": title, "publisher": pub, "link": link})
-        return out[:6]
-    except: return []
-
-def _search(q):
-    if not q or len(q) < 2: return []
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={q}.NS&lang=en-US&region=IN"
-        res = _req.get(url, headers=headers, timeout=5)
-        quotes = res.json().get('quotes', []) if res.ok else []
-        out, seen = [], set()
-        for q2 in quotes:
-            if q2.get('quoteType') not in ['EQUITY','ETF']: continue
-            sym = q2.get('symbol','')
-            if not sym or sym in seen: continue
-            seen.add(sym)
-            out.append({'symbol': sym,
-                        'shortname': q2.get('shortname') or q2.get('longname') or sym,
-                        'exchDisp': q2.get('exchDisp') or ''})
-        return out[:5]
-    except: return []
-
-
-# ─── Cached wrappers ──────────────────────────────────────────────────────────
-@st.cache_data(ttl=30)
-def get_stocks():
-    tickers = db_get_tickers()
-    rows = []
-    for tk in tickers:
-        d = db_get_fundamentals(tk)
-        if d: rows.append(d)
-    return rows
-
-@st.cache_data(ttl=300)
-def get_history(ticker):
-    rows = db_get_history(ticker)
-    if not rows:
-        rows = _fetch_history(ticker)
-        if rows: db_upsert_history(ticker, rows)
-    return rows
-
-@st.cache_data(ttl=60)
-def get_indices():
-    return _fetch_indices()
-
-@st.cache_data(ttl=600)
-def get_news(ticker):
-    return _fetch_news(ticker)
-
-def add_stock(ticker):
-    ticker = ticker.upper()
-    try:
-        with st.spinner(f"Fetching {ticker}…"):
-            fd = _fetch_fundamentals(ticker)
-            if not fd.get('current_price') and not fd.get('name'):
-                st.toast(f"✗ Could not find data for {ticker}")
-                return
-            db_add_ticker(ticker)
-            db_upsert_fundamentals(ticker, fd)
-            # Fetch history in background via session state flag
-            st.session_state[f'needs_history_{ticker}'] = True
-        get_stocks.clear()
-        st.toast(f"✓ Added {ticker}")
-    except Exception as e:
-        st.toast(f"✗ Error: {e}")
-
-def remove_stock(ticker):
-    db_remove_ticker(ticker)
-    get_stocks.clear()
-    get_history.clear()
-
-def refresh_stock(ticker):
-    try:
-        fd = _fetch_fundamentals(ticker)
-        db_upsert_fundamentals(ticker, fd)
-        hist = _fetch_history(ticker)
-        if hist: db_upsert_history(ticker, hist)
-    except: pass
-    get_stocks.clear()
-    get_history.clear()
-
-
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
 def fmt_cr(v):
     try:
         v = float(v or 0)
@@ -344,595 +205,1014 @@ def fmt_pct(v):
         f = float(v or 0); return f"{f*100:.2f}%" if f != 0 else "—"
     except: return "—"
 
-def fmt_div(v):
+def fmt_div_yield(v):
     try:
         f = float(v or 0); return f"{f*100:.2f}%" if f != 0 else "—"
     except: return "—"
 
 def rec_text(rec):
-    if not rec or rec in ("N/A","none",""," "): return "—"
-    r = rec.lower().replace("_"," ")
-    for k,lbl in {"strong buy":"⬆ Strong Buy","buy":"↑ Buy","hold":"→ Hold",
-                  "neutral":"→ Hold","sell":"↓ Sell","underperform":"↓ Underperform"}.items():
+    if not rec or rec in ("N/A", "none", "", " "): return "—"
+    r = rec.lower().replace("_", " ")
+    labels = {
+        "strong buy": "⬆ Strong Buy", "buy": "↑ Buy",
+        "hold": "→ Hold", "neutral": "→ Hold",
+        "sell": "↓ Sell", "underperform": "↓ Underperform"
+    }
+    for k, lbl in labels.items():
         if k in r: return lbl
-    return rec.replace("_"," ").title()
+    return rec.replace("_", " ").title()
 
-def psym(c): return "₹" if (c or "INR") in ("INR","INp") else "$"
+def psym(currency):
+    return "₹" if (currency or "INR") in ("INR", "INp") else "$"
 
-COLORS = ['#3b82f6','#22c55e','#f59e0b','#a78bfa','#ef4444','#06b6d4','#f97316','#ec4899']
+COLORS = [
+    "#4f8ef7","#2ecc71","#f0a500","#a78bfa","#e74c3c",
+    "#06b6d4","#f97316","#ec4899","#10b981","#8b5cf6"
+]
+BG = t["bg"]
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Cached data fetchers (call backend directly — no HTTP)
+# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=30)
+def get_stocks_direct(user_id: str):
+    return database.get_fundamental_data_for_user(user_id)
 
-# ─── Auth ─────────────────────────────────────────────────────────────────────
-if 'authenticated' not in st.session_state:
-    st.session_state['authenticated'] = False
+@st.cache_data(ttl=300)
+def get_history_direct(ticker: str):
+    return database.get_historical_prices(ticker)
 
-if not st.session_state['authenticated']:
-    if st.query_params.get("auth") == "ok":
-        st.session_state['authenticated'] = True
+@st.cache_data(ttl=90)
+def get_indices_direct():
+    try:
+        return fetcher.fetch_indices()
+    except Exception:
+        return []
+
+@st.cache_data(ttl=600)
+def get_news_direct(ticker: str):
+    try:
+        return fetcher.fetch_stock_news(ticker)
+    except Exception:
+        return []
+
+@st.cache_data(ttl=20)
+def search_direct(q: str):
+    if not q or len(q) < 2: return []
+    try:
+        return fetcher.search_ticker(q)
+    except Exception:
+        return []
+
+@st.cache_data(ttl=60)
+def get_portfolio_direct(user_id: str):
+    return {
+        h["ticker"]: {"shares": h["shares"], "buy": h["buy_price"]}
+        for h in database.get_portfolio(user_id)
+    }
+
+def add_stock_direct(user_id, ticker):
+    try:
+        fd = fetcher.fetch_fundamental_data(ticker)
+        if fd and (fd.get("current_price") or fd.get("name")):
+            database.add_user_ticker(user_id, ticker)
+            database.upsert_fundamental_data(ticker, fd)
+            # fetch history in session (non-blocking attempt)
+            try:
+                hd = fetcher.fetch_historical_prices(ticker)
+                database.upsert_historical_prices(ticker, hd)
+            except Exception:
+                pass
+            st.toast(f"✓ Added {ticker}")
+            get_stocks_direct.clear()
+            get_history_direct.clear()
+        else:
+            st.toast(f"✗ Invalid ticker: {ticker}")
+    except Exception as e:
+        st.toast(f"✗ Error: {e}")
+
+def remove_stock_direct(user_id, ticker):
+    database.remove_user_ticker(user_id, ticker)
+    get_stocks_direct.clear()
+
+def refresh_stock_direct(user_id, ticker):
+    try:
+        fd = fetcher.fetch_fundamental_data(ticker)
+        database.upsert_fundamental_data(ticker, fd)
+        get_stocks_direct.clear()
+    except Exception:
+        pass
+
+def seed_user_stocks(user_id):
+    """Fetch data for all pre-allocated stocks on first login."""
+    tickers = database.get_user_tickers(user_id)
+    with st.spinner(f"Loading your {len(tickers)} pre-allocated stocks... (this takes ~30s on first login)"):
+        for ticker in tickers:
+            try:
+                fd = fetcher.fetch_fundamental_data(ticker)
+                database.upsert_fundamental_data(ticker, fd)
+            except Exception:
+                pass
+    # Fetch histories separately (background-ish)
+    for ticker in tickers:
+        try:
+            hd = fetcher.fetch_historical_prices(ticker)
+            database.upsert_historical_prices(ticker, hd)
+        except Exception:
+            pass
+    get_stocks_direct.clear()
+    get_history_direct.clear()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auth State Bootstrap
+# ─────────────────────────────────────────────────────────────────────────────
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+if "user_id" not in st.session_state:
+    st.session_state["user_id"] = ""
+if "username" not in st.session_state:
+    st.session_state["username"] = ""
+if "auth_mode" not in st.session_state:
+    st.session_state["auth_mode"] = "login"
+
+# Restore session from localStorage token
+if not st.session_state["authenticated"]:
+    qp_token = st.query_params.get("fp_token", "")
+    if qp_token:
+        user = database.get_user_by_token(qp_token)
+        if user:
+            st.session_state["authenticated"] = True
+            st.session_state["user_id"] = user["user_id"]
+            st.session_state["username"] = user["username"]
         st.query_params.clear()
         st.rerun()
 
-if not st.session_state['authenticated']:
-    components.html("""<script>
-    if (localStorage.getItem('fp_auth') === '1') {
+# ─────────────────────────────────────────────────────────────────────────────
+# LOGIN / REGISTER SCREEN
+# ─────────────────────────────────────────────────────────────────────────────
+if not st.session_state["authenticated"]:
+    # Try to restore from localStorage
+    components.html("""
+    <script>
+    const tok = localStorage.getItem('fp_token_v2');
+    if (tok) {
         const u = new URL(window.parent.location.href);
-        u.searchParams.set('auth','ok');
+        u.searchParams.set('fp_token', tok);
         window.parent.location.href = u.toString();
     }
     </script>""", height=0)
-    _, cc, _ = st.columns([1, 1.2, 1])
+
+    _, cc, _ = st.columns([1, 1.1, 1])
     with cc:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown(f"""
-        <div style="text-align:center;margin-bottom:8px;">
-          <span style="font-size:28px;font-weight:800;color:{t['text_main']};letter-spacing:-1px;">
-            Fin<span style="color:{t['primary']};">Pulse</span></span>
-          <p style="color:{t['text_muted']};font-size:13px;margin:6px 0 0;">Indian Markets Intelligence</p>
-        </div>""", unsafe_allow_html=True)
+        <div style="text-align:center;margin-bottom:28px;">
+          <div style="display:inline-flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="font-size:32px;">📈</span>
+            <span style="font-size:30px;font-weight:900;letter-spacing:-1.5px;color:{t['text']};">
+              Fin<span style="color:{t['primary']};">Pulse</span>
+            </span>
+          </div>
+          <p style="color:{t['sub']};font-size:13.5px;margin:0;font-weight:500;">
+            Your personal Indian market intelligence hub.
+          </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        mode = st.session_state["auth_mode"]
+        label = "Sign In" if mode == "login" else "Create Account"
+
         with st.container(border=True):
-            st.markdown(f"<p style='font-weight:600;font-size:15px;color:{t['text_main']};margin:0 0 12px;'>Sign in</p>", unsafe_allow_html=True)
-            pw = st.text_input("pw", type="password", placeholder="Enter password", label_visibility="collapsed")
-            if st.button("Continue →", use_container_width=True):
-                if pw == "admin":
-                    st.session_state['authenticated'] = True
-                    components.html("<script>localStorage.setItem('fp_auth','1');</script>", height=0)
-                    st.rerun()
+            st.markdown(f"""
+            <p style="font-size:17px;font-weight:800;color:{t['text']};margin:0 0 4px;">{label}</p>
+            <p style="font-size:12px;color:{t['sub']};margin:0 0 18px;">
+              {"Enter your username to continue." if mode=="login" else "Pick a unique username — it's your permanent identity."}
+            </p>
+            """, unsafe_allow_html=True)
+
+            uname_input = st.text_input(
+                "username",
+                placeholder="e.g. abhinav_trades",
+                label_visibility="collapsed",
+                key="auth_username_input"
+            )
+
+            btn_label = "→ Sign In" if mode == "login" else "→ Create Account"
+            if st.button(btn_label, use_container_width=True):
+                uname = uname_input.strip()
+                if not uname:
+                    st.error("Please enter a username.")
+                elif len(uname) < 2:
+                    st.error("Username must be at least 2 characters.")
+                elif len(uname) > 30:
+                    st.error("Username must be 30 characters or less.")
                 else:
-                    st.error("Wrong password")
-            st.caption("Password: admin")
+                    try:
+                        if mode == "login":
+                            result = database.login_user(uname)
+                            is_new = False
+                        else:
+                            result = database.create_user(uname)
+                            is_new = True
+
+                        st.session_state["authenticated"] = True
+                        st.session_state["user_id"] = result["user_id"]
+                        st.session_state["username"] = result["username"]
+
+                        # Persist session token in localStorage
+                        components.html(
+                            f"<script>localStorage.setItem('fp_token_v2', '{result['user_id']}');</script>",
+                            height=0
+                        )
+
+                        if is_new:
+                            st.session_state["needs_seeding"] = True
+
+                        st.rerun()
+
+                    except ValueError as e:
+                        err = str(e)
+                        if mode == "login" and "not found" in err.lower():
+                            st.error(f"🔍 Username **{uname}** doesn't exist yet.")
+                            st.info("💡 Switch to **Create Account** below to register this username.")
+                        elif mode == "register" and "already taken" in err.lower():
+                            st.error(f"🚫 {err}")
+                            suggestions = [f"{uname}1", f"{uname}_2", f"{uname}_{uname[:3]}"]
+                            st.info(f"💡 Try one of these: **{'**, **'.join(suggestions)}**")
+                        else:
+                            st.error(err)
+
+            st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+            if mode == "login":
+                if st.button("New here? Create an account →", use_container_width=True, key="sw_reg"):
+                    st.session_state["auth_mode"] = "register"
+                    st.rerun()
+            else:
+                if st.button("← Back to Sign In", use_container_width=True, key="sw_login"):
+                    st.session_state["auth_mode"] = "login"
+                    st.rerun()
+
+        st.markdown(
+            f"<p style='text-align:center;font-size:11px;color:{t['muted']};margin-top:20px;'>"
+            "FinPulse · Data via yFinance & NSE · Not financial advice</p>",
+            unsafe_allow_html=True
+        )
     st.stop()
 
+# ─────────────────────────────────────────────────────────────────────────────
+# AUTHENTICATED APP
+# ─────────────────────────────────────────────────────────────────────────────
+USER_ID  = st.session_state["user_id"]
+USERNAME = st.session_state["username"]
 
-# ─── Fetch pending history in background ─────────────────────────────────────
-for key in list(st.session_state.keys()):
-    if key.startswith('needs_history_') and st.session_state[key]:
-        tk = key.replace('needs_history_','')
-        hist = _fetch_history(tk)
-        if hist: db_upsert_history(tk, hist)
-        st.session_state[key] = False
-        get_history.clear()
+# First-login seeding
+if st.session_state.pop("needs_seeding", False):
+    seed_user_stocks(USER_ID)
+    st.rerun()
 
-
-# ─── Load data ────────────────────────────────────────────────────────────────
-stocks    = get_stocks()
+# Load data
+stocks    = get_stocks_direct(USER_ID)
 df_stocks = pd.DataFrame(stocks) if stocks else pd.DataFrame()
 
-if 'sel_ticker' not in st.session_state:
-    st.session_state['sel_ticker'] = df_stocks['ticker'].iloc[0] if not df_stocks.empty else None
-if 'search_q' not in st.session_state:
-    st.session_state['search_q'] = ""
+if "sel_ticker" not in st.session_state:
+    st.session_state["sel_ticker"] = df_stocks["ticker"].iloc[0] if not df_stocks.empty else None
+if "search_input_key" not in st.session_state:
+    st.session_state["search_input_key"] = ""
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TOP NAV BAR
+# ─────────────────────────────────────────────────────────────────────────────
+h1, h2, h3, h4 = st.columns([2.2, 5.5, 2.3, 1.5])
 
-# ─── Header ───────────────────────────────────────────────────────────────────
-h1, h2, h3 = st.columns([2.5, 6, 2.5])
 with h1:
-    st.markdown(f"""<div style="padding-top:4px;">
-      <span style="font-size:24px;font-weight:800;color:{t['primary']};letter-spacing:-1px;">
-        Fin<span style="color:{t['text_main']};">Pulse</span></span>
-      <span style="font-size:10px;color:{t['text_muted']};margin-left:8px;font-weight:700;
-                  letter-spacing:0.05em;text-transform:uppercase;">India</span>
-    </div>""", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:8px;padding-top:6px;">
+      <span style="font-size:22px;">📈</span>
+      <span style="font-size:22px;font-weight:900;letter-spacing:-1px;color:{t['text']};">
+        Fin<span style="color:{t['primary']};">Pulse</span>
+      </span>
+      <span style="font-size:9px;color:{t['muted']};font-weight:800;letter-spacing:.08em;
+                  text-transform:uppercase;margin-top:2px;">INDIA</span>
+    </div>
+    """, unsafe_allow_html=True)
 
 with h2:
-    search_q = st_keyup("search", placeholder="🔍  Search and add stocks — e.g. RELIANCE, TCS, INFY...",
-                        label_visibility="collapsed", key="search_q_input", debounce=250)
+    q_val = st_keyup(
+        "search", key="search_input_key",
+        placeholder="🔍  Search stocks, indices, ETFs...",
+        label_visibility="collapsed", debounce=300
+    )
 
 with h3:
-    theme_icon = "🌞 Light Mode" if st.session_state['theme'] == 'dark' else "🌙 Dark Mode"
-    if st.button(theme_icon, use_container_width=True):
-        toggle_theme(); st.rerun()
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;justify-content:flex-end;padding-top:4px;">
+      <div style="background:{t['card']};border:1px solid {t['border']};border-radius:24px;
+                  padding:5px 14px;display:flex;align-items:center;gap:8px;">
+        <div style="width:26px;height:26px;border-radius:50%;
+                    background:linear-gradient(135deg,{t['primary']},{t['accent']});
+                    display:flex;align-items:center;justify-content:center;
+                    font-size:11px;font-weight:800;color:white;">
+          {USERNAME[0].upper()}
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:{t['text']};line-height:1.2;">{USERNAME}</div>
+          <div style="font-size:9px;color:{t['muted']};font-weight:600;letter-spacing:.04em;">MEMBER</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# Search results dropdown
-if search_q and len(search_q.strip()) >= 2:
-    results = _search(search_q.strip())
+with h4:
+    theme_icon = "☀️" if st.session_state["theme"] == "dark" else "🌙"
+    if st.button(f"{theme_icon} Theme", use_container_width=True):
+        st.session_state["theme"] = "light" if st.session_state["theme"] == "dark" else "dark"
+        st.rerun()
+
+# Search results
+if q_val and len(q_val.strip()) >= 2:
+    results = search_direct(q_val.strip())
     if results:
         with st.container(border=True):
-            st.markdown(f"<p style='font-size:10px;font-weight:800;letter-spacing:0.07em;color:{t['text_muted']};margin-bottom:8px;'>SEARCH RESULTS — click Add to track</p>", unsafe_allow_html=True)
+            st.markdown(
+                f"<p style='font-size:10px;font-weight:800;letter-spacing:.08em;"
+                f"color:{t['muted']};margin-bottom:8px;text-transform:uppercase;'>Search Results</p>",
+                unsafe_allow_html=True
+            )
             for r in results:
-                sym = r['symbol']; nm = (r.get('shortname') or sym)[:32]; exch = r.get('exchDisp','')
-                ci, ca, cv = st.columns([6, 2, 2])
-                with ci:
-                    st.markdown(f"**{sym}** · <span style='font-size:11.5px;color:{t['text_sub']};'>{nm} ({exch})</span>", unsafe_allow_html=True)
-                with ca:
-                    if st.button("Add ＋", key=f"add_{sym}", use_container_width=True):
-                        add_stock(sym); st.session_state['sel_ticker'] = sym; st.rerun()
-                with cv:
-                    if st.button("View 👁", key=f"view_{sym}", use_container_width=True):
-                        st.session_state['sel_ticker'] = sym; st.rerun()
+                sym = r["symbol"]; nm = (r.get("shortname") or sym)[:36]
+                exch = r.get("exchDisp", "")
+                c_inf, c_add, c_view = st.columns([6, 2, 2])
+                with c_inf:
+                    st.markdown(
+                        f"<b style='color:{t['text']}'>{sym}</b> "
+                        f"<span style='font-size:11px;color:{t['sub']};'>{nm} ({exch})</span>",
+                        unsafe_allow_html=True
+                    )
+                with c_add:
+                    if st.button("＋ Add", key=f"add_{sym}", use_container_width=True):
+                        add_stock_direct(USER_ID, sym)
+                        st.session_state["sel_ticker"] = sym
+                        st.session_state["search_input_key"] = ""
+                        st.rerun()
+                with c_view:
+                    if st.button("View", key=f"vs_{sym}", use_container_width=True):
+                        st.session_state["sel_ticker"] = sym
+                        st.session_state["search_input_key"] = ""
+                        st.rerun()
     else:
-        st.caption("No results. Try adding .NS suffix e.g. RELIANCE.NS")
+        st.caption("No results. Try a ticker like RELIANCE.NS or TCS.NS")
 
-st.markdown("<div style='margin-bottom:12px;'></div>", unsafe_allow_html=True)
-
-# ─── Market index ribbon ──────────────────────────────────────────────────────
-indices = get_indices()
+# ─────────────────────────────────────────────────────────────────────────────
+# MARKET INDEX RIBBON
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("<div style='margin:10px 0 6px;'></div>", unsafe_allow_html=True)
+indices = get_indices_direct()
 if indices:
     cols = st.columns(len(indices))
     for i, idx in enumerate(indices):
-        price = float(idx.get('price') or 0)
-        change = float(idx.get('change') or 0)
-        chg_pct = float(idx.get('change_pct') or 0)
-        c_color = t['green'] if change >= 0 else t['red']
-        sign = "+" if change >= 0 else ""
+        price  = float(idx.get("price") or 0)
+        change = float(idx.get("change") or 0)
+        chg_pct= float(idx.get("change_pct") or 0)
+        c_col  = t["green"] if change >= 0 else t["red"]
+        c_dim  = t["green_dim"] if change >= 0 else t["red_dim"]
+        sign   = "+" if change >= 0 else ""
         with cols[i]:
             st.markdown(f"""
-            <div style="background:{t['card_bg']};border:1px solid {t['border']};border-radius:12px;padding:10px 14px;text-align:center;">
-                <div style="font-size:10px;color:{t['text_muted']};text-transform:uppercase;font-weight:700;letter-spacing:0.06em;">{idx.get('name')}</div>
-                <div style="font-size:16px;font-weight:800;color:{t['text_main']};margin:2px 0;">{price:,.2f}</div>
-                <div style="font-size:11px;font-weight:700;color:{c_color};">{sign}{change:,.2f} ({sign}{chg_pct:.2f}%)</div>
-            </div>""", unsafe_allow_html=True)
+            <div style="background:{t['card']};border:1px solid {t['border']};
+                        border-radius:14px;padding:10px 16px;text-align:center;">
+              <div style="font-size:9px;color:{t['muted']};text-transform:uppercase;
+                          font-weight:800;letter-spacing:.08em;margin-bottom:2px;">
+                {idx.get('name','Index')}
+              </div>
+              <div style="font-size:17px;font-weight:800;color:{t['text']};line-height:1.2;">
+                {price:,.2f}
+              </div>
+              <div style="font-size:11px;font-weight:700;color:{c_col};background:{c_dim};
+                          border-radius:20px;padding:2px 8px;display:inline-block;margin-top:2px;">
+                {sign}{change:,.2f} ({sign}{chg_pct:.2f}%)
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # Sentiment
-nifty_pct = next((float(i.get('change_pct') or 0) for i in indices if i.get('symbol') == '^NSEI'), 0.0)
-s_label = "Upbeat Sentiment" if nifty_pct >= 0 else "Cautious Sentiment"
-s_color = t['green'] if nifty_pct >= 0 else t['red']
-s_bars  = "████████" if nifty_pct >= 0 else "░░░░░░░░"
+nifty_pct = 0.0
+for idx in indices:
+    if idx.get("symbol") == "^NSEI":
+        nifty_pct = float(idx.get("change_pct") or 0); break
 
-# ─── Main layout ──────────────────────────────────────────────────────────────
-col_main, col_sidebar = st.columns([7.2, 2.8])
+sentiment_label = "Upbeat Sentiment 📈" if nifty_pct >= 0 else "Cautious Sentiment 📉"
+sentiment_color = t["green"] if nifty_pct >= 0 else t["red"]
+nifty_dir = "bullish 🟢" if nifty_pct >= 0 else "bearish 🔴"
+
+gainers = losers = 0
+top_sect = "—"
+if not df_stocks.empty:
+    gainers = int((df_stocks["day_change_pct"].fillna(0) > 0).sum())
+    losers  = int((df_stocks["day_change_pct"].fillna(0) < 0).sum())
+    s_mode = df_stocks["sector"].dropna().mode()
+    top_sect = s_mode.iloc[0] if not s_mode.empty else "—"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TWO-COLUMN LAYOUT
+# ─────────────────────────────────────────────────────────────────────────────
+col_main, col_side = st.columns([7.2, 2.8])
 
 with col_main:
-    # Market summary card
-    nifty_dir = "bullish" if nifty_pct >= 0 else "bearish"
-    m_text = f"<strong>Market Outlook</strong>: Indian equities show a <strong>{nifty_dir}</strong> trend. NIFTY 50 moved <strong>{nifty_pct:+.2f}%</strong> today."
-    if not df_stocks.empty:
-        gainers = int((df_stocks['day_change_pct'].fillna(0) > 0).sum())
-        losers  = int((df_stocks['day_change_pct'].fillna(0) < 0).sum())
-        m_text += f"<br><br><strong>Watchlist</strong>: {gainers} stocks advanced · {losers} declined."
-    else:
-        m_text += "<br><br><strong>Watchlist</strong>: No stocks tracked yet. Search above to add stocks."
+    # Welcome banner
     st.markdown(f"""
-    <div style="background:{t['card_bg']};border:1px solid {t['border']};border-radius:12px;padding:18px 22px;margin-bottom:15px;line-height:1.5;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:11.5px;font-weight:700;">
-            <span style="color:{t['primary']};text-transform:uppercase;letter-spacing:0.05em;">📝 Market Intelligence</span>
-            <span style="color:{s_color};font-weight:800;">{s_bars} {s_label}</span>
+    <div style="background:linear-gradient(135deg,{t['card']} 0%,{t['bg']} 100%);
+                border:1px solid {t['border2']};border-radius:16px;
+                padding:20px 26px;margin-bottom:18px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:20px;font-weight:800;color:{t['text']};margin-bottom:4px;">
+            Welcome back, <span style="color:{t['primary']};">{USERNAME}</span> 👋
+          </div>
+          <div style="font-size:12.5px;color:{t['sub']};line-height:1.6;">
+            Indian equities are showing a <strong style="color:{sentiment_color};">{nifty_dir}</strong>
+            trend · NIFTY 50: <strong style="color:{sentiment_color};">{nifty_pct:+.2f}%</strong>
+            {'· Watchlist: ' + str(gainers) + ' ▲ / ' + str(losers) + ' ▼' if not df_stocks.empty else ' · Add stocks to your watchlist to get started.'}
+          </div>
         </div>
-        <div style="font-size:12.5px;color:{t['text_sub']};">{m_text}</div>
-    </div>""", unsafe_allow_html=True)
+        <div style="text-align:right;">
+          <div style="font-size:10px;font-weight:800;letter-spacing:.08em;
+                      text-transform:uppercase;color:{t['muted']};margin-bottom:4px;">
+            Market Sentiment
+          </div>
+          <div style="font-size:14px;font-weight:800;color:{sentiment_color};">{sentiment_label}</div>
+          <div style="font-size:11px;color:{t['muted']};margin-top:2px;">{len(df_stocks)} stocks tracked</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     tab1, tab2, tab3, tab4 = st.tabs(["📊  Dashboard", "⚖️  Compare", "🔍  Screener", "💼  Portfolio"])
 
-    # ══ TAB 1 — DASHBOARD ══════════════════════════════════════════════════════
+    # ════════════════════════════════════════════════════════════════════════
+    # TAB 1 — DASHBOARD
+    # ════════════════════════════════════════════════════════════════════════
     with tab1:
         if df_stocks.empty:
-            st.info("👆 Use the search bar above to add stocks to your watchlist.")
+            st.markdown(f"""
+            <div style="background:{t['card']};border:1px solid {t['border']};
+                        border-radius:16px;padding:40px;text-align:center;margin-top:20px;">
+              <div style="font-size:48px;margin-bottom:12px;">⏳</div>
+              <div style="font-size:18px;font-weight:700;color:{t['text']};margin-bottom:8px;">
+                Your watchlist is loading...
+              </div>
+              <div style="font-size:13px;color:{t['sub']};">
+                Your 20 pre-loaded stocks are being fetched from NSE.<br>
+                This takes ~30s on first login. Refresh the page in a moment.<br>
+                Or use the search bar above to add a stock right now.
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            valid = df_stocks['ticker'].tolist()
-            if st.session_state.get('sel_ticker') not in valid:
-                st.session_state['sel_ticker'] = valid[0]
-            sel  = st.session_state['sel_ticker']
-            fd   = df_stocks[df_stocks['ticker'] == sel].iloc[0]
-            sym  = psym(fd.get('currency'))
-            price = float(fd.get('current_price') or 0)
-            chg   = float(fd.get('day_change_pct') or 0)
-            hi52  = float(fd.get('high_52w') or 0)
-            lo52  = float(fd.get('low_52w') or 0)
-            chg_col = t['green'] if chg >= 0 else t['red']
-            arrow   = "▲" if chg >= 0 else "▼"
+            valid = df_stocks["ticker"].tolist()
+            if st.session_state.get("sel_ticker") not in valid:
+                st.session_state["sel_ticker"] = valid[0]
+
+            sel  = st.session_state["sel_ticker"]
+            fd   = df_stocks[df_stocks["ticker"] == sel].iloc[0]
+            curr = fd.get("currency") or "INR"
+            sym  = psym(curr)
+            price= float(fd.get("current_price") or 0)
+            chg  = float(fd.get("day_change_pct") or 0)
+            hi52 = float(fd.get("high_52w") or 0)
+            lo52 = float(fd.get("low_52w") or 0)
             chg_sign = "+" if chg >= 0 else ""
-            chg_bg  = 'rgba(34,197,94,.1)' if chg >= 0 else 'rgba(239,68,68,.1)'
-            chg_bdr = 'rgba(34,197,94,.2)' if chg >= 0 else 'rgba(239,68,68,.2)'
+            chg_col  = t["green"] if chg >= 0 else t["red"]
+            chg_dim  = t["green_dim"] if chg >= 0 else t["red_dim"]
+            arrow    = "▲" if chg >= 0 else "▼"
+
+            r_pe  = float(fd.get("pe_ratio") or 0)
+            r_pb  = float(fd.get("pb_ratio") or 0)
+            r_roe = float(fd.get("roe") or 0) * 100
+            r_tgt = float(fd.get("target_price") or 0)
+            upside_str = ""
+            if r_tgt > 0 and price > 0:
+                upside = (r_tgt - price) / price * 100
+                upside_col = t["green"] if upside >= 0 else t["red"]
+                upside_str = f"""
+                <div style="background:{t['bg']};border:1px solid {t['border']};border-radius:10px;
+                            padding:8px 14px;margin-top:10px;display:inline-block;">
+                  <span style="font-size:9.5px;color:{t['muted']};font-weight:800;
+                               text-transform:uppercase;letter-spacing:.07em;">Analyst Target</span><br>
+                  <span style="font-size:14px;font-weight:800;color:{t['text']};">{sym}{r_tgt:,.2f}</span>
+                  <span style="font-size:11px;font-weight:700;color:{upside_col};margin-left:6px;">
+                    ({upside:+.1f}% upside)
+                  </span>
+                </div>"""
 
             # Hero card
             st.markdown(f"""
-            <div style="background:{t['card_bg']};border:1px solid {t['border']};border-radius:14px;padding:20px 24px;margin-bottom:15px;">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+            <div style="background:{t['card']};border:1px solid {t['border2']};
+                        border-radius:16px;padding:22px 26px;margin-bottom:16px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;
+                          flex-wrap:wrap;gap:16px;">
                 <div>
-                  <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:{t['text_muted']};">{fd.get('sector') or '—'}</div>
-                  <div style="font-size:18px;font-weight:700;color:{t['text_main']};margin:4px 0 10px;">{fd.get('name') or sel} <span style="color:{t['text_muted']};font-size:14px;">({sel})</span></div>
-                  <div style="display:flex;align-items:center;gap:12px;">
-                    <span style="font-size:38px;font-weight:800;color:{t['text_main']};letter-spacing:-1.2px;line-height:1;">{sym}{price:,.2f}</span>
-                    <span style="background:{chg_bg};color:{chg_col};border:1px solid {chg_bdr};border-radius:20px;padding:4px 12px;font-size:12.5px;font-weight:700;">{arrow} {chg_sign}{chg:.2f}%</span>
+                  <div style="font-size:9.5px;font-weight:800;letter-spacing:.1em;
+                              text-transform:uppercase;color:{t['muted']};margin-bottom:4px;">
+                    {fd.get('sector') or '—'}
                   </div>
+                  <div style="font-size:19px;font-weight:800;color:{t['text']};margin-bottom:10px;">
+                    {fd.get('name') or sel}
+                    <span style="color:{t['muted']};font-size:13px;font-weight:600;">({sel})</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                    <span style="font-size:40px;font-weight:900;color:{t['text']};
+                                letter-spacing:-1.5px;line-height:1;">
+                      {sym}{price:,.2f}
+                    </span>
+                    <span style="background:{chg_dim};color:{chg_col};border-radius:24px;
+                                padding:5px 14px;font-size:13px;font-weight:800;">
+                      {arrow} {chg_sign}{chg:.2f}%
+                    </span>
+                  </div>
+                  {upside_str}
                 </div>
                 <div style="text-align:right;">
-                  <div style="font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:{t['text_muted']};margin-bottom:6px;">Analyst Recommendation</div>
-                  <div style="font-size:15px;font-weight:700;color:{t['text_main']};">{rec_text(fd.get('recommendation',''))}</div>
-                  <div style="font-size:11.5px;color:{t['text_sub']};margin-top:4px;">Target: {fmt_price(fd.get('target_price'), sym)}</div>
+                  <div style="font-size:9.5px;font-weight:800;letter-spacing:.08em;
+                              text-transform:uppercase;color:{t['muted']};margin-bottom:6px;">
+                    Analyst View
+                  </div>
+                  <div style="font-size:16px;font-weight:800;color:{t['text']};">
+                    {rec_text(fd.get('recommendation',''))}
+                  </div>
                 </div>
               </div>
-            </div>""", unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
 
             # AI Copilot
-            r_pe = float(fd.get('pe_ratio') or 0); r_roe = float(fd.get('roe') or 0) * 100
-            r_tgt = float(fd.get('target_price') or 0); r_hi = float(fd.get('high_52w') or 0); r_lo = float(fd.get('low_52w') or 0)
+            v_str = f"trades at a P/E of {r_pe:.1f}" if r_pe > 0 else "has no trailing P/E listed"
+            e_str = f"delivers an ROE of {r_roe:.1f}%" if r_roe != 0 else "has stable efficiency indicators"
+            r_str = f"analyst consensus target is {sym}{r_tgt:,.2f}" if r_tgt > 0 else "no consensus target is priced in"
             st.markdown(f"""
-            <div style="background:{t['card_bg']};border:1px solid {t['border']};border-radius:12px;padding:18px 22px;margin-bottom:15px;line-height:1.5;">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-                    <span style="font-size:16px;">🤖</span>
-                    <span style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:{t['primary']};text-transform:uppercase;">FinPulse AI Copilot</span>
-                </div>
-                <div style="font-size:13.5px;font-weight:700;color:{t['text_main']};margin-bottom:8px;">Is {fd.get('name') or sel} a buy at {sym}{price:,.2f}?</div>
-                <div style="font-size:12.5px;color:{t['text_sub']};">
-                    <strong>Analysis:</strong> Operating in <strong>{fd.get('sector') or '—'}</strong> sector.
-                    {"P/E of "+str(round(r_pe,1)) if r_pe>0 else "No trailing P/E listed"} ·
-                    {"ROE of "+str(round(r_roe,1))+"%" if r_roe!=0 else "ROE stable"} ·
-                    {"Target " + sym + f"{r_tgt:,.2f}" if r_tgt>0 else "No analyst target"} ·
-                    52W range: {sym}{r_lo:,.2f} – {sym}{r_hi:,.2f}
-                </div>
-            </div>""", unsafe_allow_html=True)
+            <div style="background:linear-gradient(135deg,{t['accent_dim']},{t['primary_dim']});
+                        border:1px solid {t['border']};border-radius:14px;
+                        padding:18px 22px;margin-bottom:16px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                <span style="font-size:18px;">🤖</span>
+                <span style="font-size:11px;font-weight:800;letter-spacing:.07em;
+                            color:{t['accent']};text-transform:uppercase;">FinPulse AI Copilot</span>
+              </div>
+              <div style="font-size:14px;font-weight:700;color:{t['text']};margin-bottom:8px;">
+                Is {fd.get('name') or sel} a buy at {sym}{price:,.2f}?
+              </div>
+              <div style="font-size:12.5px;color:{t['sub']};line-height:1.65;">
+                Operating in <strong>{fd.get('sector') or '—'}</strong>, this stock {v_str} and {e_str}.
+                The {r_str}. 52-week range:
+                <strong>{sym}{lo52:,.2f}</strong> – <strong>{sym}{hi52:,.2f}</strong>.
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-            # 52W bar
+            # 52W range bar
             if hi52 > lo52 > 0:
                 pos = max(0, min(100, (price - lo52) / (hi52 - lo52) * 100))
+                bar_col = t["green"] if pos >= 50 else t["gold"] if pos >= 25 else t["red"]
                 st.markdown(f"""
-                <div style="background:{t['card_bg']};border:1px solid {t['border']};border-radius:12px;padding:14px 20px;margin-bottom:15px;">
-                  <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-                    <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:{t['text_muted']};">52-Week Range</span>
-                    <span style="font-size:11px;color:{t['text_sub']};">{pos:.0f}% above 52W low</span>
+                <div style="background:{t['card']};border:1px solid {t['border']};
+                            border-radius:14px;padding:16px 22px;margin-bottom:16px;">
+                  <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+                    <span style="font-size:9.5px;font-weight:800;letter-spacing:.09em;
+                                text-transform:uppercase;color:{t['muted']};">52-Week Range</span>
+                    <span style="font-size:11px;color:{bar_col};font-weight:700;">{pos:.0f}% above 52W low</span>
                   </div>
-                  <div style="position:relative;background:{t['border']};border-radius:4px;height:5px;">
-                    <div style="position:absolute;left:0;width:{pos}%;background:linear-gradient(90deg,{t['green']},{t['primary']});height:5px;border-radius:4px;"></div>
-                    <div style="position:absolute;left:{pos}%;transform:translateX(-50%);top:-5px;width:14px;height:14px;background:{t['text_main']};border-radius:50%;border:2px solid {t['primary']};"></div>
+                  <div style="position:relative;background:{t['border']};border-radius:6px;height:6px;">
+                    <div style="position:absolute;left:0;width:{pos}%;
+                                background:linear-gradient(90deg,{t['green']},{t['primary']});
+                                height:6px;border-radius:6px;"></div>
+                    <div style="position:absolute;left:{pos}%;transform:translateX(-50%);
+                                top:-5px;width:16px;height:16px;background:{t['text']};
+                                border-radius:50%;border:2.5px solid {t['primary']};"></div>
                   </div>
-                  <div style="display:flex;justify-content:space-between;margin-top:8px;">
-                    <span style="font-size:11px;font-weight:600;color:{t['red']};">{sym}{lo52:,.2f}</span>
-                    <span style="font-size:11px;font-weight:600;color:{t['green']};">{sym}{hi52:,.2f}</span>
+                  <div style="display:flex;justify-content:space-between;margin-top:10px;">
+                    <span style="font-size:12px;font-weight:700;color:{t['red']};">{sym}{lo52:,.2f}</span>
+                    <span style="font-size:12px;font-weight:700;color:{t['green']};">{sym}{hi52:,.2f}</span>
                   </div>
-                </div>""", unsafe_allow_html=True)
+                </div>
+                """, unsafe_allow_html=True)
 
-            # Metrics
-            st.markdown(f"<p style='font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:{t['text_muted']};margin:0 0 10px;'>Key Financials</p>", unsafe_allow_html=True)
+            # Key financials
+            st.markdown(f"<p style='font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:{t['muted']};margin:0 0 10px;'>Key Financials</p>", unsafe_allow_html=True)
             r1a,r1b,r1c,r1d = st.columns(4)
-            r1a.metric("Market Cap", fmt_cr(fd.get('market_cap')))
-            r1b.metric("P/E Ratio",  fmt_n(fd.get('pe_ratio')))
-            r1c.metric("P/B Ratio",  fmt_n(fd.get('pb_ratio')))
-            r1d.metric("EPS (TTM)",  fmt_price(fd.get('eps'), sym))
-
+            r1a.metric("Market Cap",    fmt_cr(fd.get("market_cap")))
+            r1b.metric("P/E (TTM)",     fmt_n(fd.get("pe_ratio")))
+            r1c.metric("P/B Ratio",     fmt_n(fd.get("pb_ratio")))
+            r1d.metric("EPS (TTM)",     fmt_price(fd.get("eps"), sym))
             r2a,r2b,r2c,r2d = st.columns(4)
-            r2a.metric("ROE",           fmt_pct(fd.get('roe')))
-            r2b.metric("ROA",           fmt_pct(fd.get('roce')))
-            r2c.metric("Div Yield",     fmt_div(fd.get('dividend_yield')))
-            r2d.metric("Beta",          fmt_n(fd.get('beta'), 3))
-
+            r2a.metric("ROE",           fmt_pct(fd.get("roe")))
+            r2b.metric("ROA",           fmt_pct(fd.get("roce")))
+            r2c.metric("Div Yield",     fmt_div_yield(fd.get("dividend_yield")))
+            r2d.metric("Beta",          fmt_n(fd.get("beta"), 3))
             r3a,r3b,r3c,r3d = st.columns(4)
-            vol = int(fd.get('volume') or 0); avg_vol = int(fd.get('avg_volume') or 0)
+            vol = int(fd.get("volume") or 0); avg_vol = int(fd.get("avg_volume") or 0)
             r3a.metric("52W High",      fmt_price(hi52, sym))
             r3b.metric("52W Low",       fmt_price(lo52, sym))
             r3c.metric("Volume",        f"{vol:,}" if vol else "—")
-            r3d.metric("Avg Vol 3M",    f"{avg_vol:,}" if avg_vol else "—")
+            r3d.metric("Avg Volume 3M", f"{avg_vol:,}" if avg_vol else "—")
 
             st.markdown("<hr>", unsafe_allow_html=True)
 
             # Chart
-            hist = get_history(sel)
+            hist = get_history_direct(sel)
             if hist:
                 df_h = pd.DataFrame(hist)
-                df_h['date'] = pd.to_datetime(df_h['date'])
-                df_h = df_h.ffill().fillna(0).sort_values('date').drop_duplicates('date')
-                df_h['MA10'] = df_h['close'].rolling(10).mean()
-                df_h['MA40'] = df_h['close'].rolling(40).mean()
-                df_h['MA90'] = df_h['close'].rolling(90).mean()
+                df_h["date"] = pd.to_datetime(df_h["date"])
+                df_h = df_h.ffill().fillna(0).sort_values("date").drop_duplicates("date")
+                df_h["MA10"] = df_h["close"].rolling(10).mean()
+                df_h["MA40"] = df_h["close"].rolling(40).mean()
+                df_h["MA90"] = df_h["close"].rolling(90).mean()
 
                 ctrl1, ctrl2 = st.columns([2.5, 4.5])
                 with ctrl1:
-                    ctype = st.radio("Type", ["Candlestick","Line"], index=1, horizontal=True, key=f"ctype_{sel}")
+                    ctype = st.radio("Type", ["Candlestick","Line"], index=1,
+                                     horizontal=True, key=f"ctype_{sel}")
                 with ctrl2:
-                    trange = st.radio("Range", ["1W","1M","6M","1Y","5Y"], index=2, horizontal=True, key=f"trange_{sel}")
+                    trange = st.radio("Range", ["1W","1M","6M","1Y","5Y"], index=2,
+                                      horizontal=True, key=f"trange_{sel}")
 
                 ma1,ma2,ma3,_ = st.columns([1,1,1,5])
                 show10 = ma1.checkbox("10D MA", key=f"ma10_{sel}")
                 show40 = ma2.checkbox("40D MA", key=f"ma40_{sel}")
                 show90 = ma3.checkbox("90D MA", key=f"ma90_{sel}")
 
-                offsets = {"1W": pd.Timedelta(days=7), "1M": pd.DateOffset(months=1),
-                           "6M": pd.DateOffset(months=6), "1Y": pd.DateOffset(years=1),
-                           "5Y": pd.DateOffset(years=5)}
-                df_f = df_h[df_h['date'] >= df_h['date'].max() - offsets[trange]].copy()
+                offsets = {
+                    "1W": pd.Timedelta(days=7),   "1M": pd.DateOffset(months=1),
+                    "6M": pd.DateOffset(months=6), "1Y": pd.DateOffset(years=1),
+                    "5Y": pd.DateOffset(years=5)
+                }
+                end_d = df_h["date"].max()
+                df_f  = df_h[df_h["date"] >= end_d - offsets[trange]].copy()
 
                 if len(df_f) >= 2:
-                    sp, ep = df_f.iloc[0]['close'], df_f.iloc[-1]['close']
+                    sp, ep = df_f.iloc[0]["close"], df_f.iloc[-1]["close"]
                     pct = ((ep-sp)/sp*100) if sp else 0
-                    c_p = t['green'] if pct >= 0 else t['red']
-                    st.markdown(f"<div style='margin:4px 0 8px;'>"
-                                f"<span style='font-size:22px;font-weight:700;color:{c_p};'>{'+' if pct>=0 else ''}{pct:.2f}%</span>"
-                                f"<span style='font-size:12px;color:{t['text_sub']};margin-left:10px;'>{sym}{sp:,.2f} → {sym}{ep:,.2f} over {trange}</span>"
-                                f"</div>", unsafe_allow_html=True)
+                    c_p = t["green"] if pct >= 0 else t["red"]
+                    st.markdown(
+                        f"<div style='margin:4px 0 8px;'>"
+                        f"<span style='font-size:24px;font-weight:800;color:{c_p};'>"
+                        f"{'+' if pct>=0 else ''}{pct:.2f}%</span>"
+                        f"<span style='font-size:12px;color:{t['sub']};margin-left:12px;'>"
+                        f"{sym}{sp:,.2f} → {sym}{ep:,.2f} over {trange}</span></div>",
+                        unsafe_allow_html=True
+                    )
 
                 if ctype == "Candlestick":
-                    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                                        row_heights=[0.72, 0.28], vertical_spacing=0.01)
+                    fig = make_subplots(rows=2,cols=1,shared_xaxes=True,
+                                        row_heights=[0.72,0.28],vertical_spacing=0.01)
                     fig.add_trace(plgo.Candlestick(
-                        x=df_f['date'], open=df_f['open'], high=df_f['high'],
-                        low=df_f['low'], close=df_f['close'], name='Price',
-                        increasing_line_color=t['green'], increasing_fillcolor='rgba(34,197,94,.15)',
-                        decreasing_line_color=t['red'],   decreasing_fillcolor='rgba(239,68,68,.12)',
-                    ), row=1, col=1)
-                    vcols = [t['green'] if c >= o else t['red'] for c,o in zip(df_f['close'], df_f['open'])]
-                    fig.add_trace(plgo.Bar(x=df_f['date'], y=df_f['volume'], name='Volume',
-                                           marker_color=vcols, opacity=0.6,
-                                           hovertemplate='Vol: %{y:,.0f}<extra></extra>'), row=2, col=1)
-                    fig.update_layout(xaxis_rangeslider_visible=False, height=480)
-                    fig.update_yaxes(tickformat='.2s', row=2, col=1,
-                                     gridcolor=t['border'], tickfont=dict(color=t['text_sub'], size=10))
-                    add_row = 1
+                        x=df_f["date"],open=df_f["open"],high=df_f["high"],
+                        low=df_f["low"],close=df_f["close"],name="Price",
+                        increasing_line_color=t["green"],
+                        increasing_fillcolor="rgba(46,204,113,.15)",
+                        decreasing_line_color=t["red"],
+                        decreasing_fillcolor="rgba(231,76,60,.12)",
+                    ),row=1,col=1)
+                    vcols=[t["green"] if c>=o else t["red"]
+                           for c,o in zip(df_f["close"],df_f["open"])]
+                    fig.add_trace(plgo.Bar(
+                        x=df_f["date"],y=df_f["volume"],name="Volume",
+                        marker_color=vcols,opacity=0.55,
+                        hovertemplate="Vol: %{y:,.0f}<extra></extra>"
+                    ),row=2,col=1)
+                    fig.update_layout(xaxis_rangeslider_visible=False,height=490)
+                    fig.update_yaxes(tickformat=".2s",row=2,col=1,
+                                     gridcolor=t["border"],tickfont=dict(color=t["sub"],size=10))
+                    add_row=1
                 else:
-                    y_min = df_f['close'].min() * 0.997; y_max = df_f['close'].max() * 1.003
-                    fig = plgo.Figure()
+                    y_min=df_f["close"].min()*0.997; y_max=df_f["close"].max()*1.003
+                    fig=plgo.Figure()
                     fig.add_trace(plgo.Scatter(
-                        x=df_f['date'], y=df_f['close'], mode='lines', name='Close',
-                        line=dict(color=t['primary'], width=2.5),
-                        fill='tozeroy',
-                        fillcolor='rgba(59,130,246,.08)' if st.session_state['theme']=='dark' else 'rgba(37,99,235,.06)',
-                        hovertemplate=f'%{{x|%d %b %Y}}<br><b>{sym}%{{y:,.2f}}</b><extra></extra>'
+                        x=df_f["date"],y=df_f["close"],mode="lines",name="Close",
+                        line=dict(color=t["primary"],width=2.5),
+                        fill="tozeroy",
+                        fillcolor="rgba(79,142,247,.07)" if st.session_state["theme"]=="dark" else "rgba(37,99,235,.05)",
+                        hovertemplate=f"%{{x|%d %b %Y}}<br><b>{sym}%{{y:,.2f}}</b><extra></extra>"
                     ))
-                    fig.update_yaxes(range=[y_min, y_max])
-                    fig.update_layout(height=390)
-                    add_row = None
+                    fig.update_yaxes(range=[y_min,y_max]); fig.update_layout(height=400)
+                    add_row=None
 
-                for show, col_name, name, color in [
-                    (show10,'MA10','10D MA','#f59e0b'),
-                    (show40,'MA40','40D MA',t['primary']),
-                    (show90,'MA90','90D MA','#a78bfa')
+                for show,col_n,name,color in [
+                    (show10,"MA10","10D MA",t["gold"]),
+                    (show40,"MA40","40D MA",t["primary"]),
+                    (show90,"MA90","90D MA",t["accent"])
                 ]:
                     if show:
-                        tr = plgo.Scatter(x=df_f['date'], y=df_f[col_name], mode='lines', name=name,
-                                          line=dict(color=color, width=1.5, dash='dot'))
-                        fig.add_trace(tr, row=add_row, col=1) if add_row else fig.add_trace(tr)
+                        tr=plgo.Scatter(x=df_f["date"],y=df_f[col_n],mode="lines",name=name,
+                                        line=dict(color=color,width=1.5,dash="dot"))
+                        if add_row: fig.add_trace(tr,row=add_row,col=1)
+                        else: fig.add_trace(tr)
 
                 fig.update_layout(
-                    paper_bgcolor=BG, plot_bgcolor=BG, margin=dict(l=0,r=0,t=8,b=0),
-                    hovermode='x unified',
-                    legend=dict(orientation='h', y=1.04, x=1, xanchor='right',
-                                bgcolor='rgba(0,0,0,0)', font=dict(size=11, color=t['text_sub'])),
-                    xaxis=dict(gridcolor=t['border'], tickfont=dict(color=t['text_sub'], size=10), showline=False),
-                    yaxis=dict(gridcolor=t['border'], tickfont=dict(color=t['text_sub'], size=10),
-                               showline=False, tickprefix=sym),
+                    paper_bgcolor=BG,plot_bgcolor=BG,
+                    margin=dict(l=0,r=0,t=8,b=0),hovermode="x unified",
+                    legend=dict(orientation="h",y=1.04,x=1,xanchor="right",
+                                bgcolor="rgba(0,0,0,0)",font=dict(size=11,color=t["sub"])),
+                    xaxis=dict(gridcolor=t["border"],tickfont=dict(color=t["sub"],size=10),showline=False),
+                    yaxis=dict(gridcolor=t["border"],tickfont=dict(color=t["sub"],size=10),
+                               showline=False,tickprefix=sym),
                 )
-                st.plotly_chart(fig, use_container_width=True,
-                                key=f"main_chart_{sel}_{ctype}_{trange}_{show10}_{show40}_{show90}")
+                st.plotly_chart(fig,use_container_width=True,key=f"chart_{sel}_{ctype}_{trange}")
 
                 # Technical indicators
-                st.markdown(f"<p style='font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:{t['text_muted']};margin:12px 0 10px;'>Technical Indicators</p>", unsafe_allow_html=True)
-                ti1,ti2,ti3 = st.columns(3)
-                lp    = df_h.iloc[-1]['close']
-                ma50  = df_h['close'].rolling(50).mean().iloc[-1]
-                ma200 = df_h['close'].rolling(200).mean().iloc[-1]
-                ti1.metric("vs 50D MA",  f"{'↑ Above' if lp>ma50 else '↓ Below'}", f"MA50={sym}{ma50:.2f}")
-                ti2.metric("vs 200D MA", f"{'↑ Above' if lp>ma200 else '↓ Below'}" if pd.notnull(ma200) and ma200>0 else "—",
-                           f"MA200={sym}{ma200:.2f}" if pd.notnull(ma200) and ma200>0 else "Insufficient data")
-                delta = df_h['close'].diff(); gain = delta.clip(lower=0).rolling(14).mean()
-                loss  = (-delta.clip(upper=0)).rolling(14).mean()
-                rsi   = (100 - 100/(1+gain/loss)).iloc[-1]
-                ti3.metric("RSI (14)", f"{rsi:.1f}", "Overbought" if rsi>70 else ("Oversold" if rsi<30 else "Neutral"))
+                st.markdown(f"<p style='font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:{t['muted']};margin:14px 0 10px;'>Technical Indicators</p>", unsafe_allow_html=True)
+                ti1,ti2,ti3=st.columns(3)
+                lp   =df_h.iloc[-1]["close"]
+                ma50 =df_h["close"].rolling(50).mean().iloc[-1]
+                ma200=df_h["close"].rolling(200).mean().iloc[-1]
+                ti1.metric("vs 50D MA",f"{'↑ Above' if lp>ma50 else '↓ Below'}",f"MA50={sym}{ma50:.2f}")
+                if pd.notnull(ma200) and ma200>0:
+                    ti2.metric("vs 200D MA",f"{'↑ Above' if lp>ma200 else '↓ Below'}",f"MA200={sym}{ma200:.2f}")
+                else:
+                    ti2.metric("vs 200D MA","—","Insufficient data")
+                delta=df_h["close"].diff()
+                gain=delta.clip(lower=0).rolling(14).mean()
+                loss=(-delta.clip(upper=0)).rolling(14).mean()
+                rsi=(100-100/(1+gain/loss)).iloc[-1]
+                rsi_l="Overbought 🔴" if rsi>70 else ("Oversold 🟢" if rsi<30 else "Neutral ⚪")
+                ti3.metric("RSI (14)",f"{rsi:.1f}",rsi_l)
             else:
-                st.info("📊 Historical data is being fetched. Refresh in a moment.")
+                st.info("📊 Historical data loading. Refresh in a moment.")
 
             # News
-            news = get_news(sel)
-            if news:
-                st.markdown(f"<hr><p style='font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:{t['text_muted']};margin:16px 0 10px;'>Latest News</p>", unsafe_allow_html=True)
+            news_items = get_news_direct(sel)
+            if news_items:
+                st.markdown("<hr>", unsafe_allow_html=True)
+                st.markdown(f"<p style='font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:{t['muted']};margin:14px 0 10px;'>Latest News</p>", unsafe_allow_html=True)
                 n_cols = st.columns(2)
-                for i, item in enumerate(news):
-                    with n_cols[i % 2]:
-                        st.markdown(f"""<a href="{item.get('link','#')}" target="_blank" style="text-decoration:none;">
-                            <div style="background:{t['card_bg']};border:1px solid {t['border']};border-radius:10px;padding:12px 16px;margin-bottom:12px;height:105px;overflow:hidden;">
-                                <div style="font-size:10px;font-weight:700;color:{t['primary']};text-transform:uppercase;margin-bottom:4px;">{item.get('publisher','')}</div>
-                                <div style="font-size:13px;font-weight:600;color:{t['text_main']};line-height:1.4;">{item.get('title','')[:90]}{'...' if len(item.get('title',''))>90 else ''}</div>
-                            </div></a>""", unsafe_allow_html=True)
+                for i, item in enumerate(news_items):
+                    title=item.get("title",""); pub=item.get("publisher","Yahoo Finance"); link=item.get("link","#")
+                    with n_cols[i%2]:
+                        st.markdown(f"""
+                        <a href="{link}" target="_blank" style="text-decoration:none;">
+                          <div style="background:{t['card']};border:1px solid {t['border']};
+                                      border-radius:12px;padding:14px 18px;margin-bottom:12px;
+                                      height:100px;overflow:hidden;">
+                            <div style="font-size:9.5px;font-weight:800;color:{t['primary']};
+                                        text-transform:uppercase;margin-bottom:5px;">{pub}</div>
+                            <div style="font-size:13px;font-weight:600;color:{t['text']};
+                                        line-height:1.45;">{title[:95]}{'...' if len(title)>95 else ''}</div>
+                          </div>
+                        </a>
+                        """, unsafe_allow_html=True)
 
-    # ══ TAB 2 — COMPARE ════════════════════════════════════════════════════════
+    # ════════════════════════════════════════════════════════════════════════
+    # TAB 2 — COMPARE
+    # ════════════════════════════════════════════════════════════════════════
     with tab2:
         if df_stocks.empty:
             st.info("Add stocks to compare.")
         else:
-            st.markdown(f"<p style='font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:{t['text_muted']};margin:0 0 10px;'>1-Year Normalized Performance (Base=100)</p>", unsafe_allow_html=True)
-            pf = plgo.Figure()
-            for i, tk in enumerate(df_stocks['ticker'].tolist()):
-                h = get_history(tk)
+            st.markdown(f"<p style='font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:{t['muted']};margin:0 0 12px;'>1-Year Normalised Performance (Base = 100)</p>", unsafe_allow_html=True)
+            pf=plgo.Figure()
+            for i,tk in enumerate(df_stocks["ticker"].tolist()):
+                h=get_history_direct(tk)
                 if not h: continue
-                dh = pd.DataFrame(h); dh['date'] = pd.to_datetime(dh['date'])
-                dh = dh[dh['date'] >= dh['date'].max() - pd.DateOffset(years=1)]
-                if dh.empty or dh.iloc[0]['close'] == 0: continue
-                dh['norm'] = dh['close'] / dh.iloc[0]['close'] * 100
-                pf.add_trace(plgo.Scatter(x=dh['date'], y=dh['norm'], mode='lines', name=tk,
-                                           line=dict(color=COLORS[i%len(COLORS)], width=2)))
-            pf.add_hline(y=100, line_dash='dot', line_color=t['border'])
-            pf.update_layout(paper_bgcolor=BG, plot_bgcolor=BG, height=360,
-                              margin=dict(l=0,r=0,t=8,b=0), hovermode='x unified',
-                              xaxis=dict(gridcolor=t['border'], tickfont=dict(color=t['text_sub'],size=10)),
-                              yaxis=dict(gridcolor=t['border'], tickfont=dict(color=t['text_sub'],size=10), title='Index'),
-                              legend=dict(orientation='h', y=1.06, bgcolor='rgba(0,0,0,0)', font=dict(color=t['text_sub'],size=11)))
-            st.plotly_chart(pf, use_container_width=True, key="compare_perf")
+                dh=pd.DataFrame(h); dh["date"]=pd.to_datetime(dh["date"])
+                dh=dh[dh["date"]>=dh["date"].max()-pd.DateOffset(years=1)]
+                if dh.empty or dh.iloc[0]["close"]==0: continue
+                dh["norm"]=dh["close"]/dh.iloc[0]["close"]*100
+                pf.add_trace(plgo.Scatter(x=dh["date"],y=dh["norm"],mode="lines",name=tk,
+                                           line=dict(color=COLORS[i%len(COLORS)],width=2)))
+            pf.add_hline(y=100,line_dash="dot",line_color=t["border"])
+            pf.update_layout(paper_bgcolor=BG,plot_bgcolor=BG,height=360,
+                              margin=dict(l=0,r=0,t=8,b=0),hovermode="x unified",
+                              xaxis=dict(gridcolor=t["border"],tickfont=dict(color=t["sub"],size=10)),
+                              yaxis=dict(gridcolor=t["border"],tickfont=dict(color=t["sub"],size=10),title="Index"),
+                              legend=dict(orientation="h",y=1.06,bgcolor="rgba(0,0,0,0)",font=dict(color=t["sub"],size=11)))
+            st.plotly_chart(pf,use_container_width=True,key="cmp_perf")
 
-            mc1, mc2 = st.columns(2)
-            for i,(col,lbl,mult,sfx) in enumerate([('pe_ratio','P/E',1,''),('pb_ratio','P/B',1,''),('roe','ROE',100,'%'),('roce','ROA',100,'%')]):
-                vals = df_stocks[col].fillna(0)*mult
-                bf = plgo.Figure(plgo.Bar(x=df_stocks['ticker'], y=vals,
+            mc1,mc2=st.columns(2)
+            for i,(col,lbl,mult,sfx) in enumerate([
+                ("pe_ratio","P/E Ratio",1,""),("pb_ratio","P/B Ratio",1,""),
+                ("roe","ROE",100,"%"),("roce","ROA",100,"%")
+            ]):
+                vals=df_stocks[col].fillna(0)*mult
+                bf=plgo.Figure(plgo.Bar(x=df_stocks["ticker"],y=vals,
                     marker_color=[COLORS[j%len(COLORS)] for j in range(len(df_stocks))],
-                    text=[f"{v:.1f}{sfx}" for v in vals], textposition='outside',
-                    textfont=dict(size=11,color=t['text_main'])))
-                bf.update_layout(title=dict(text=lbl,font=dict(size=12,color=t['text_sub'])),
-                    paper_bgcolor=BG, plot_bgcolor=BG, height=240,
-                    margin=dict(l=0,r=0,t=36,b=0), showlegend=False,
-                    xaxis=dict(tickfont=dict(size=11,color=t['text_main'])),
-                    yaxis=dict(gridcolor=t['border'], tickfont=dict(color=t['text_sub'],size=10), rangemode='tozero'))
-                (mc1 if i%2==0 else mc2).plotly_chart(bf, use_container_width=True, key=f"cbar_{col}")
+                    text=[f"{v:.1f}{sfx}" for v in vals],textposition="outside",
+                    textfont=dict(size=11,color=t["text"])))
+                bf.update_layout(title=dict(text=lbl,font=dict(size=12,color=t["sub"])),
+                    paper_bgcolor=BG,plot_bgcolor=BG,height=240,margin=dict(l=0,r=0,t=36,b=0),showlegend=False,
+                    xaxis=dict(tickfont=dict(size=11,color=t["text"])),
+                    yaxis=dict(gridcolor=t["border"],tickfont=dict(color=t["sub"],size=10),rangemode="tozero"))
+                (mc1 if i%2==0 else mc2).plotly_chart(bf,use_container_width=True,key=f"cmp_bar_{col}")
 
-            sec = df_stocks.groupby('sector').size().reset_index(name='n')
-            sf  = plgo.Figure(plgo.Pie(labels=sec['sector'], values=sec['n'], hole=.55,
-                                        marker_colors=COLORS, textinfo='label+percent', textfont_size=12))
-            sf.update_layout(paper_bgcolor=BG, height=300, margin=dict(l=0,r=0,t=0,b=0), showlegend=False)
-            st.plotly_chart(sf, use_container_width=True, key="sector_donut")
+            bd=df_stocks.copy(); bd["roe_pct"]=bd["roe"].fillna(0)*100
+            bd["sz"]=bd["market_cap"].fillna(0).clip(lower=1e10).apply(lambda x:max(16,min(70,x/4e12)))
+            bfig=plgo.Figure(plgo.Scatter(
+                x=bd["pe_ratio"].fillna(0),y=bd["roe_pct"],mode="markers+text",text=bd["ticker"],
+                textposition="top center",textfont=dict(size=11,color=t["text"]),
+                marker=dict(size=bd["sz"],color=[COLORS[i%len(COLORS)] for i in range(len(bd))],
+                            opacity=.85,line=dict(color=BG,width=1.5)),
+                hovertemplate="<b>%{text}</b><br>P/E: %{x:.1f}<br>ROE: %{y:.1f}%<extra></extra>"
+            ))
+            bfig.update_layout(paper_bgcolor=BG,plot_bgcolor=BG,height=360,margin=dict(l=0,r=0,t=8,b=0),
+                xaxis=dict(title="P/E",gridcolor=t["border"],tickfont=dict(color=t["sub"],size=10),rangemode="tozero"),
+                yaxis=dict(title="ROE %",gridcolor=t["border"],tickfont=dict(color=t["sub"],size=10)))
+            st.plotly_chart(bfig,use_container_width=True,key="cmp_bubble")
 
-    # ══ TAB 3 — SCREENER ═══════════════════════════════════════════════════════
+            sec=df_stocks.groupby("sector").size().reset_index(name="n")
+            sf=plgo.Figure(plgo.Pie(labels=sec["sector"],values=sec["n"],hole=.55,
+                marker_colors=COLORS,textinfo="label+percent",textfont_size=12))
+            sf.update_layout(paper_bgcolor=BG,height=300,margin=dict(l=0,r=0,t=0,b=0),showlegend=False)
+            st.plotly_chart(sf,use_container_width=True,key="cmp_donut")
+
+    # ════════════════════════════════════════════════════════════════════════
+    # TAB 3 — SCREENER
+    # ════════════════════════════════════════════════════════════════════════
     with tab3:
         if df_stocks.empty:
             st.info("Add stocks to use the screener.")
         else:
-            f1, f2 = st.columns(2)
+            f1,f2=st.columns(2)
             with f1:
-                pe_v = df_stocks['pe_ratio'].replace(0, float('nan')).dropna()
-                pe_lo = 0.0; pe_hi = float(pe_v.max()) if not pe_v.empty else 100.0
-                if pe_lo >= pe_hi: pe_hi = pe_lo + 1
-                min_pe, max_pe = st.slider("P/E Range", pe_lo, pe_hi, (pe_lo, pe_hi))
-                min_roe = st.slider("Min ROE (%)", 0., 50., 0., 0.5)
+                pe_v=df_stocks["pe_ratio"].replace(0,float("nan")).dropna()
+                pe_lo=0.0; pe_hi=float(pe_v.max()) if not pe_v.empty else 100.0
+                if pe_lo>=pe_hi: pe_hi=pe_lo+1
+                min_pe,max_pe=st.slider("P/E Range",pe_lo,pe_hi,(pe_lo,pe_hi))
+                min_roe=st.slider("Min ROE (%)",0.,50.,0.,0.5)
             with f2:
-                min_mc = st.number_input("Min Market Cap (Cr ₹)", 0., step=100.)
-                pb_v   = df_stocks['pb_ratio'].replace(0, float('nan')).dropna()
-                pb_hi  = float(pb_v.max()) if not pb_v.empty else 20.0
-                max_pb = st.slider("Max P/B", 0., max(pb_hi*1.5, 20.), max(pb_hi*1.5, 20.))
+                min_mc=st.number_input("Min Market Cap (Cr ₹)",0.,step=100.)
+                pb_v=df_stocks["pb_ratio"].replace(0,float("nan")).dropna()
+                pb_hi=float(pb_v.max()) if not pb_v.empty else 20.0
+                max_pb=st.slider("Max P/B",0.,max(pb_hi*1.5,20.),max(pb_hi*1.5,20.))
 
-            filt = df_stocks[
-                (df_stocks['pe_ratio'].fillna(0) >= min_pe) &
-                (df_stocks['pe_ratio'].fillna(0) <= max_pe) &
-                (df_stocks['roe'].fillna(0)*100 >= min_roe) &
-                (df_stocks['market_cap'].fillna(0) >= min_mc*1e7) &
-                (df_stocks['pb_ratio'].fillna(999) <= max_pb)]
-
+            filt=df_stocks[
+                (df_stocks["pe_ratio"].fillna(0)>=min_pe)&
+                (df_stocks["pe_ratio"].fillna(0)<=max_pe)&
+                (df_stocks["roe"].fillna(0)*100>=min_roe)&
+                (df_stocks["market_cap"].fillna(0)>=min_mc*1e7)&
+                (df_stocks["pb_ratio"].fillna(999)<=max_pb)
+            ]
             if not filt.empty:
-                d = filt[['ticker','name','sector','current_price','market_cap','pe_ratio','pb_ratio','roe','roce','dividend_yield','beta']].copy()
-                d['market_cap']     = d['market_cap'].fillna(0)/1e7
-                d['roe']            = d['roe'].fillna(0)*100
-                d['roce']           = d['roce'].fillna(0)*100
-                d['dividend_yield'] = d['dividend_yield'].fillna(0)*100
-                d.columns = ['Ticker','Name','Sector','Price (₹)','MCap (Cr ₹)','P/E','P/B','ROE %','ROA %','Div %','Beta']
+                d=filt[["ticker","name","sector","current_price","market_cap",
+                         "pe_ratio","pb_ratio","roe","roce","dividend_yield","beta"]].copy()
+                d["market_cap"]=d["market_cap"].fillna(0)/1e7
+                d["roe"]=d["roe"].fillna(0)*100; d["roce"]=d["roce"].fillna(0)*100
+                d["dividend_yield"]=d["dividend_yield"].fillna(0)*100
+                d.columns=["Ticker","Name","Sector","Price (₹)","MCap (Cr ₹)",
+                            "P/E","P/B","ROE %","ROA %","Div Yield %","Beta"]
+                d=d.round(2)
                 st.dataframe(
-                    d.round(2).style
-                     .background_gradient(subset=['ROE %'], cmap='RdYlGn', vmin=0, vmax=30)
-                     .background_gradient(subset=['P/E'],   cmap='RdYlGn_r', vmin=5, vmax=50)
-                     .format({'MCap (Cr ₹)':'{:,.0f}','Price (₹)':'{:,.2f}'}),
-                    use_container_width=True, hide_index=True)
+                    d.style
+                     .background_gradient(subset=["ROE %"],cmap="RdYlGn",vmin=0,vmax=30)
+                     .background_gradient(subset=["P/E"],cmap="RdYlGn_r",vmin=5,vmax=50)
+                     .format({"MCap (Cr ₹)":"{:,.0f}","Price (₹)":"{:,.2f}"}),
+                    use_container_width=True,hide_index=True
+                )
                 st.caption(f"{len(filt)} of {len(df_stocks)} stocks match")
-                csv = d.to_csv(index=False)
-                st.download_button("⬇ Export CSV", data=csv, file_name="finpulse_screener.csv", mime="text/csv")
+                # CSV export
+                csv_data = d.to_csv(index=False)
+                st.download_button("⬇ Export CSV", data=csv_data,
+                                   file_name="finpulse.csv", mime="text/csv")
             else:
                 st.info("No stocks match the current filters.")
 
-    # ══ TAB 4 — PORTFOLIO ══════════════════════════════════════════════════════
+    # ════════════════════════════════════════════════════════════════════════
+    # TAB 4 — PORTFOLIO
+    # ════════════════════════════════════════════════════════════════════════
     with tab4:
-        if 'portfolio' not in st.session_state:
-            st.session_state['portfolio'] = {}
+        portfolio = get_portfolio_direct(USER_ID)
+
         if not df_stocks.empty:
-            a1,a2,a3 = st.columns([2,1,1])
-            pt  = a1.selectbox("Stock", df_stocks['ticker'].tolist(), key='pt')
-            ps  = a2.number_input("Shares", min_value=1, step=1, key='ps')
-            pbp = a3.number_input("Buy Price (₹)", min_value=0.01, step=0.01, key='pbp')
-            if st.button("Add / Update Holding", use_container_width=True):
-                st.session_state['portfolio'][pt] = {'shares': ps, 'buy': pbp}
-                st.toast(f"Updated {pt}")
+            a1,a2,a3=st.columns([2.5,1.2,1.3])
+            pt =a1.selectbox("Stock",df_stocks["ticker"].tolist(),key="pt")
+            ps =a2.number_input("Shares",min_value=1,step=1,key="ps")
+            pbp=a3.number_input("Buy Price (₹)",min_value=0.01,step=0.01,key="pbp")
+            if st.button("Add / Update Holding",use_container_width=True):
+                database.upsert_portfolio_holding(USER_ID,pt,float(ps),float(pbp))
+                get_portfolio_direct.clear()
+                st.toast(f"✓ Saved {pt} holding"); st.rerun()
 
-            if st.session_state['portfolio']:
-                rows, t_inv, t_cur = [], 0, 0
-                for t_key, info in list(st.session_state['portfolio'].items()):
-                    row = df_stocks[df_stocks['ticker']==t_key]
-                    if row.empty: continue
-                    cp = float(row['current_price'].values[0] or 0)
-                    sh, bp = info['shares'], info['buy']
-                    inv = sh*bp; cur = sh*cp; pnl = cur-inv
-                    pp  = (cp-bp)/bp*100 if bp else 0
-                    t_inv += inv; t_cur += cur
-                    rows.append({"Ticker":t_key,"Shares":sh,"Buy (₹)":bp,"LTP (₹)":round(cp,2),
-                                 "Invested":round(inv,2),"Current":round(cur,2),
-                                 "P&L (₹)":round(pnl,2),"P&L %":round(pp,2)})
-                if rows:
-                    tp = t_cur-t_inv; tpp = tp/t_inv*100 if t_inv else 0; sg = "+" if tp>=0 else ""
-                    p1,p2,p3,p4 = st.columns(4)
-                    p1.metric("Invested",      f"₹{t_inv:,.2f}")
-                    p2.metric("Current Value", f"₹{t_cur:,.2f}")
-                    p3.metric("Total P&L",     f"{sg}₹{tp:,.2f}")
-                    p4.metric("Total Return",  f"{sg}{tpp:.2f}%")
-                    st.markdown("---")
-                    dh2 = pd.DataFrame(rows)
-                    st.dataframe(dh2.style.map(
+        if portfolio:
+            rows,t_inv,t_cur=[],0,0
+            for tk,info in portfolio.items():
+                row=df_stocks[df_stocks["ticker"]==tk] if not df_stocks.empty else pd.DataFrame()
+                cp=float(row["current_price"].values[0]) if not row.empty else 0.0
+                sh,bp=info["shares"],info["buy"]
+                inv=sh*bp; cur=sh*cp; pnl=cur-inv
+                pp=(cp-bp)/bp*100 if bp else 0
+                t_inv+=inv; t_cur+=cur
+                rows.append({"Ticker":tk,"Shares":sh,"Buy (₹)":bp,"LTP (₹)":round(cp,2),
+                             "Invested (₹)":round(inv,2),"Current (₹)":round(cur,2),
+                             "P&L (₹)":round(pnl,2),"P&L %":round(pp,2)})
+            if rows:
+                tp=t_cur-t_inv; tpp=tp/t_inv*100 if t_inv else 0; sg="+" if tp>=0 else ""
+                p1,p2,p3,p4=st.columns(4)
+                p1.metric("Invested",f"₹{t_inv:,.2f}")
+                p2.metric("Current Value",f"₹{t_cur:,.2f}")
+                p3.metric("Total P&L",f"{sg}₹{tp:,.2f}")
+                p4.metric("Total Return",f"{sg}{tpp:.2f}%")
+                st.markdown("---")
+                dh=pd.DataFrame(rows)
+                st.dataframe(
+                    dh.style.map(
                         lambda v: f"color:{t['green']}" if isinstance(v,(int,float)) and v>0
-                                  else (f"color:{t['red']}" if isinstance(v,(int,float)) and v<0 else ''),
-                        subset=['P&L (₹)','P&L %']), use_container_width=True, hide_index=True)
-                    af = plgo.Figure(plgo.Pie(labels=[r['Ticker'] for r in rows], values=[r['Current'] for r in rows],
-                        hole=.55, marker_colors=COLORS[:len(rows)], textinfo='label+percent', textfont_size=12))
-                    af.update_layout(paper_bgcolor=BG, height=300, margin=dict(l=0,r=0,t=8,b=0), showlegend=False)
-                    st.plotly_chart(af, use_container_width=True, key="port_donut")
-                    rm = st.selectbox("Remove holding", ["— select —"]+[r['Ticker'] for r in rows])
-                    if rm != "— select —" and st.button("Remove"):
-                        del st.session_state['portfolio'][rm]; st.rerun()
+                                  else(f"color:{t['red']}" if isinstance(v,(int,float)) and v<0 else ""),
+                        subset=["P&L (₹)","P&L %"]
+                    ),use_container_width=True,hide_index=True
+                )
+                af=plgo.Figure(plgo.Pie(
+                    labels=[r["Ticker"] for r in rows],values=[r["Current (₹)"] for r in rows],
+                    hole=.55,marker_colors=COLORS[:len(rows)],textinfo="label+percent",textfont_size=12))
+                af.update_layout(paper_bgcolor=BG,height=300,margin=dict(l=0,r=0,t=8,b=0),showlegend=False)
+                st.plotly_chart(af,use_container_width=True,key="port_alloc")
+
+                rm=st.selectbox("Remove holding",["— select —"]+[r["Ticker"] for r in rows])
+                if rm!="— select —" and st.button("✕ Remove"):
+                    database.delete_portfolio_holding(USER_ID,rm)
+                    get_portfolio_direct.clear(); st.rerun()
         else:
-            st.info("Add stocks to your watchlist first.")
+            st.markdown(f"""
+            <div style="background:{t['card']};border:1px solid {t['border']};
+                        border-radius:14px;padding:32px;text-align:center;margin-top:16px;">
+              <div style="font-size:36px;margin-bottom:10px;">💼</div>
+              <div style="font-size:15px;font-weight:700;color:{t['text']};margin-bottom:6px;">No holdings yet</div>
+              <div style="font-size:12.5px;color:{t['sub']};">Add a stock above to start tracking P&L.</div>
+            </div>
+            """, unsafe_allow_html=True)
 
 
-# ─── Sidebar / Watchlist ──────────────────────────────────────────────────────
-with col_sidebar:
-    st.markdown(f"<p style='color:{t['primary']};font-size:11px;font-weight:800;letter-spacing:.09em;margin:0 0 12px;text-transform:uppercase;'>Your Watchlist</p>", unsafe_allow_html=True)
+# ─────────────────────────────────────────────────────────────────────────────
+# SIDEBAR / WATCHLIST PANEL
+# ─────────────────────────────────────────────────────────────────────────────
+with col_side:
+    st.markdown(f"<p style='color:{t['primary']};font-size:10px;font-weight:800;letter-spacing:.1em;margin:0 0 12px;text-transform:uppercase;'>📋 Your Watchlist</p>", unsafe_allow_html=True)
 
     if not df_stocks.empty:
-        for _, row in df_stocks.iterrows():
-            tk = row['ticker']; price_s = float(row.get('current_price') or 0)
-            chg_s = float(row.get('day_change_pct') or 0); nm = (row.get('name') or tk)[:24]
-            sym_s = psym(row.get('currency')); is_sel = (st.session_state.get('sel_ticker') == tk)
-            c_chg = t['green'] if chg_s >= 0 else t['red']
-            chg_str = f"{'+'if chg_s>=0 else ''}{chg_s:.2f}%"
-            bdr = t['primary'] if is_sel else t['border']; bg = t['hover_bg'] if is_sel else t['card_bg']
+        for _,row in df_stocks.iterrows():
+            tk   =row["ticker"]
+            price=float(row.get("current_price") or 0)
+            chg  =float(row.get("day_change_pct") or 0)
+            nm   =(row.get("name") or tk)[:22]
+            sym_s=psym(row.get("currency"))
+            is_sel=(st.session_state.get("sel_ticker")==tk)
+            c_chg=t["green"] if chg>=0 else t["red"]
+            chg_s=f"{'+'if chg>=0 else ''}{chg:.2f}%"
+            bdr=t["primary"] if is_sel else t["border"]
+            bg=t["primary_dim"] if is_sel else t["card"]
+
             st.markdown(f"""
-            <div style="background:{bg};border:1px solid {bdr};border-radius:10px;padding:10px 12px;margin-bottom:6px;">
+            <div style="background:{bg};border:1px solid {bdr};border-radius:12px;
+                        padding:10px 14px;margin-bottom:6px;">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                 <div>
-                  <div style="font-size:13px;font-weight:700;color:{t['text_main']};">{tk}</div>
-                  <div style="font-size:10.5px;color:{t['text_muted']};margin-top:2px;">{nm}</div>
+                  <div style="font-size:13px;font-weight:800;color:{t['text']};">{tk}</div>
+                  <div style="font-size:10px;color:{t['muted']};margin-top:1px;">{nm}</div>
                 </div>
                 <div style="text-align:right;">
-                  <div style="font-size:13px;font-weight:600;color:{t['text_main']};">{sym_s}{price_s:,.2f}</div>
-                  <div style="font-size:11px;font-weight:600;color:{c_chg};">{chg_str}</div>
+                  <div style="font-size:13px;font-weight:700;color:{t['text']};">{sym_s}{price:,.2f}</div>
+                  <div style="font-size:11px;font-weight:700;color:{c_chg};">{chg_s}</div>
                 </div>
               </div>
-            </div>""", unsafe_allow_html=True)
-            bc, dc = st.columns([2.5, 1.5])
-            if bc.button("View →", key=f"sel_{tk}", use_container_width=True):
-                st.session_state['sel_ticker'] = tk; st.rerun()
-            if dc.button("Remove ✕", key=f"del_{tk}", use_container_width=True):
-                remove_stock(tk)
-                if st.session_state.get('sel_ticker') == tk: st.session_state['sel_ticker'] = None
+            </div>
+            """, unsafe_allow_html=True)
+
+            bc,dc=st.columns([2.5,1.5])
+            if bc.button("View →",key=f"sel_{tk}",use_container_width=True):
+                st.session_state["sel_ticker"]=tk; st.rerun()
+            if dc.button("✕",key=f"del_{tk}",use_container_width=True):
+                remove_stock_direct(USER_ID,tk)
+                if st.session_state.get("sel_ticker")==tk: st.session_state["sel_ticker"]=None
                 st.rerun()
     else:
-        st.caption("Nothing tracked yet. Search above to add stocks.")
+        st.caption("Stocks loading — or use search above to add one now.")
 
     # Heatmap
     if not df_stocks.empty:
-        st.markdown(f"<hr><p style='font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:{t['text_muted']};margin:16px 0 8px;'>Performance Heatmap</p>", unsafe_allow_html=True)
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown(f"<p style='font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:{t['muted']};margin:12px 0 8px;'>Performance Heatmap</p>", unsafe_allow_html=True)
+        hd=df_stocks.copy()
+        hd["sector"]=hd["sector"].fillna("Unknown")
+        hd["day_change_pct"]=hd["day_change_pct"].fillna(0)
+        hd["market_cap"]=hd["market_cap"].fillna(1e9).clip(lower=1e9)
         try:
-            hd = df_stocks.copy()
-            hd['sector']         = hd['sector'].fillna('Unknown')
-            hd['day_change_pct'] = hd['day_change_pct'].fillna(0)
-            hd['market_cap']     = hd['market_cap'].fillna(1e9).clip(lower=1e9)
-            fig_map = px.treemap(hd, path=[px.Constant("Watchlist"),'sector','ticker'],
-                                 values='market_cap', color='day_change_pct',
-                                 color_continuous_scale='RdYlGn', color_continuous_midpoint=0,
-                                 custom_data=['current_price','day_change_pct'])
-            fig_map.update_traces(hovertemplate='<b>%{label}</b><br>₹%{customdata[0]:,.2f}<br>%{customdata[1]:+.2f}%<extra></extra>')
-            fig_map.update_layout(paper_bgcolor=BG, height=220,
-                                   margin=dict(l=0,r=0,t=0,b=0), coloraxis_showscale=False)
-            st.plotly_chart(fig_map, use_container_width=True,
-                            config={'displayModeBar': False}, key="heatmap")
+            fig_map=px.treemap(hd,path=[px.Constant("Watchlist"),"sector","ticker"],
+                values="market_cap",color="day_change_pct",
+                color_continuous_scale="RdYlGn",color_continuous_midpoint=0,
+                custom_data=["current_price","day_change_pct"])
+            fig_map.update_traces(hovertemplate="<b>%{label}</b><br>₹%{customdata[0]:,.2f}<br>%{customdata[1]:+.2f}%<extra></extra>")
+            fig_map.update_layout(paper_bgcolor=BG,plot_bgcolor=BG,height=230,
+                margin=dict(l=0,r=0,t=0,b=0),coloraxis_showscale=False)
+            st.plotly_chart(fig_map,use_container_width=True,config={"displayModeBar":False},key="heatmap")
         except Exception as e:
             st.caption(f"Heatmap unavailable: {e}")
 
     st.markdown("<hr>", unsafe_allow_html=True)
-    cs, co = st.columns(2)
-    if cs.button("↺ Sync All", use_container_width=True):
-        for tk in df_stocks['ticker']:
-            refresh_stock(tk)
-        st.rerun()
-    if co.button("Sign out", use_container_width=True):
-        st.session_state['authenticated'] = False
-        components.html("<script>localStorage.removeItem('fp_auth');</script>", height=0)
+    cs,co=st.columns(2)
+    if cs.button("↺ Sync All",use_container_width=True):
+        if not df_stocks.empty:
+            for tk in df_stocks["ticker"]:
+                refresh_stock_direct(USER_ID,tk)
+        get_stocks_direct.clear(); st.rerun()
+    if co.button("⎋ Sign Out",use_container_width=True):
+        st.session_state["authenticated"]=False
+        st.session_state["user_id"]=""; st.session_state["username"]=""
+        components.html("<script>localStorage.removeItem('fp_token_v2');</script>",height=0)
         st.rerun()
