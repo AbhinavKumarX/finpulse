@@ -358,6 +358,7 @@ if not st.session_state["authenticated"]:
 
 
 if not st.session_state["authenticated"]:
+    _, cc, _ = st.columns([1, 1.1, 1])
     with cc:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown(f"""
