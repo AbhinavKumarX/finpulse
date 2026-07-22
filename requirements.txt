@@ -1,8 +1,6 @@
-streamlit>=1.35.0
-st-keyup>=0.0.8
-pandas>=2.0.0
-plotly>=5.22.0
-yfinance>=0.2.38
-requests>=2.31.0
-fastapi>=0.111.0
-uvicorn[standard]>=0.29.0
+streamlit
+st-keyup
+pandas
+plotly
+yfinance
+requests

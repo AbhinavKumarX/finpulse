@@ -11,7 +11,11 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "backend"))
 
 import streamlit as st
-from st_keyup import st_keyup
+try:
+    from st_keyup import st_keyup as _st_keyup
+    _HAS_KEYUP = True
+except ImportError:
+    _HAS_KEYUP = False
 import streamlit.components.v1 as components
 import pandas as pd
 import plotly.graph_objects as plgo
@@ -497,11 +501,18 @@ with h1:
     """, unsafe_allow_html=True)
 
 with h2:
-    q_val = st_keyup(
-        "search", key="search_input_key",
-        placeholder="🔍  Search stocks, indices, ETFs...",
-        label_visibility="collapsed", debounce=300
-    )
+    if _HAS_KEYUP:
+        q_val = _st_keyup(
+            "search", key="search_input_key",
+            placeholder="🔍  Search stocks, indices, ETFs...",
+            label_visibility="collapsed", debounce=300
+        )
+    else:
+        q_val = st.text_input(
+            "search", key="search_input_key",
+            placeholder="🔍  Search stocks, indices, ETFs...",
+            label_visibility="collapsed"
+        )
 
 with h3:
     st.markdown(f"""
