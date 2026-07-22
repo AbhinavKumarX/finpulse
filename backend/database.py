@@ -300,12 +300,33 @@ def get_fundamental_data(ticker: str = None):
 
 
 def get_fundamental_data_for_user(user_id: str) -> List[Dict[str, Any]]:
-    """Return fundamental data only for tickers in a user's watchlist."""
+    """Return fundamental data for all tickers in a user's watchlist."""
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        SELECT f.* FROM fundamental_data f
-        INNER JOIN user_tickers ut ON f.ticker = ut.ticker
+        SELECT 
+            ut.ticker,
+            COALESCE(f.name, ut.ticker) AS name,
+            COALESCE(f.sector, 'Unknown') AS sector,
+            COALESCE(f.market_cap, 0) AS market_cap,
+            COALESCE(f.pe_ratio, 0) AS pe_ratio,
+            COALESCE(f.eps, 0) AS eps,
+            COALESCE(f.current_price, 0) AS current_price,
+            COALESCE(f.pb_ratio, 0) AS pb_ratio,
+            COALESCE(f.roe, 0) AS roe,
+            COALESCE(f.roce, 0) AS roce,
+            COALESCE(f.high_52w, 0) AS high_52w,
+            COALESCE(f.low_52w, 0) AS low_52w,
+            COALESCE(f.dividend_yield, 0) AS dividend_yield,
+            COALESCE(f.beta, 0) AS beta,
+            COALESCE(f.target_price, 0) AS target_price,
+            COALESCE(f.recommendation, 'N/A') AS recommendation,
+            COALESCE(f.day_change_pct, 0) AS day_change_pct,
+            COALESCE(f.volume, 0) AS volume,
+            COALESCE(f.avg_volume, 0) AS avg_volume,
+            COALESCE(f.currency, 'INR') AS currency
+        FROM user_tickers ut
+        LEFT JOIN fundamental_data f ON ut.ticker = f.ticker
         WHERE ut.user_id = ?
         ORDER BY ut.added_at
     ''', (user_id,))

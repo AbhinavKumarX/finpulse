@@ -277,21 +277,37 @@ def get_portfolio_direct(user_id: str):
 
 def add_stock_direct(user_id, ticker):
     try:
-        fd = fetcher.fetch_fundamental_data(ticker)
-        if fd and (fd.get("current_price") or fd.get("name")):
-            database.add_user_ticker(user_id, ticker)
-            database.upsert_fundamental_data(ticker, fd)
-            # fetch history in session (non-blocking attempt)
-            try:
-                hd = fetcher.fetch_historical_prices(ticker)
-                database.upsert_historical_prices(ticker, hd)
-            except Exception:
-                pass
-            st.toast(f"✓ Added {ticker}")
-            get_stocks_direct.clear()
-            get_history_direct.clear()
-        else:
-            st.toast(f"✗ Invalid ticker: {ticker}")
+        t_clean = ticker.strip().upper()
+        candidates = [t_clean]
+        if not t_clean.endswith(".NS") and not t_clean.endswith(".BO") and "^" not in t_clean and "=" not in t_clean:
+            candidates.insert(0, f"{t_clean}.NS")
+        
+        target_ticker = None
+        target_fd = None
+        for cand in candidates:
+            fd = fetcher.fetch_fundamental_data(cand)
+            if fd and (fd.get("name") or fd.get("current_price", 0) > 0):
+                target_ticker = cand
+                target_fd = fd
+                break
+        
+        if not target_ticker:
+            target_ticker = candidates[0]
+
+        database.add_user_ticker(user_id, target_ticker)
+        if target_fd:
+            database.upsert_fundamental_data(target_ticker, target_fd)
+        
+        try:
+            hd = fetcher.fetch_historical_prices(target_ticker)
+            if hd:
+                database.upsert_historical_prices(target_ticker, hd)
+        except Exception:
+            pass
+
+        st.toast(f"✓ Added {target_ticker}")
+        get_stocks_direct.clear()
+        get_history_direct.clear()
     except Exception as e:
         st.toast(f"✗ Error: {e}")
 
