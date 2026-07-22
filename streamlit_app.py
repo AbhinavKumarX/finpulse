@@ -310,18 +310,24 @@ def refresh_stock_direct(user_id, ticker):
 def seed_user_stocks(user_id):
     """Fetch data for all pre-allocated stocks on first login."""
     tickers = database.get_user_tickers(user_id)
-    with st.spinner(f"Loading your {len(tickers)} pre-allocated stocks... (this takes ~30s on first login)"):
-        for ticker in tickers:
-            try:
-                fd = fetcher.fetch_fundamental_data(ticker)
+    if not tickers:
+        return
+    p_bar = st.progress(0, text=f"Fetching data for {len(tickers)} stocks from NSE...")
+    for i, ticker in enumerate(tickers):
+        try:
+            p_bar.progress((i + 1) / len(tickers), text=f"Fetching market data for {ticker} ({i+1}/{len(tickers)})...")
+            fd = fetcher.fetch_fundamental_data(ticker)
+            if fd:
                 database.upsert_fundamental_data(ticker, fd)
-            except Exception:
-                pass
-    # Fetch histories separately (background-ish)
+        except Exception:
+            pass
+    p_bar.empty()
+    # Fetch histories
     for ticker in tickers:
         try:
             hd = fetcher.fetch_historical_prices(ticker)
-            database.upsert_historical_prices(ticker, hd)
+            if hd:
+                database.upsert_historical_prices(ticker, hd)
         except Exception:
             pass
     get_stocks_direct.clear()
@@ -458,13 +464,14 @@ if not st.session_state["authenticated"]:
 USER_ID  = st.session_state["user_id"]
 USERNAME = st.session_state["username"]
 
-# First-login seeding
-if st.session_state.pop("needs_seeding", False):
-    seed_user_stocks(USER_ID)
-    st.rerun()
+# Load data & auto-seed if fundamental cache is empty for user's tickers
+user_tks = database.get_user_tickers(USER_ID)
+stocks   = get_stocks_direct(USER_ID)
 
-# Load data
-stocks    = get_stocks_direct(USER_ID)
+if (not stocks and user_tks) or st.session_state.pop("needs_seeding", False):
+    seed_user_stocks(USER_ID)
+    stocks = get_stocks_direct(USER_ID)
+
 df_stocks = pd.DataFrame(stocks) if stocks else pd.DataFrame()
 
 if "sel_ticker" not in st.session_state:
@@ -659,18 +666,19 @@ with col_main:
         if df_stocks.empty:
             st.markdown(f"""
             <div style="background:{t['card']};border:1px solid {t['border']};
-                        border-radius:16px;padding:40px;text-align:center;margin-top:20px;">
-              <div style="font-size:48px;margin-bottom:12px;">⏳</div>
+                        border-radius:16px;padding:32px;text-align:center;margin-top:20px;">
+              <div style="font-size:48px;margin-bottom:12px;">📈</div>
               <div style="font-size:18px;font-weight:700;color:{t['text']};margin-bottom:8px;">
-                Your watchlist is loading...
+                Initialize Watchlist Data
               </div>
-              <div style="font-size:13px;color:{t['sub']};">
-                Your 20 pre-loaded stocks are being fetched from NSE.<br>
-                This takes ~30s on first login. Refresh the page in a moment.<br>
-                Or use the search bar above to add a stock right now.
+              <div style="font-size:13px;color:{t['sub']};margin-bottom:16px;">
+                Your 20 pre-loaded NIFTY 50 stocks are ready. Click below to fetch live market prices from NSE.
               </div>
             </div>
             """, unsafe_allow_html=True)
+            if st.button("⚡ Fetch 20 Stocks Live Data Now", use_container_width=True):
+                seed_user_stocks(USER_ID)
+                st.rerun()
         else:
             valid = df_stocks["ticker"].tolist()
             if st.session_state.get("sel_ticker") not in valid:
