@@ -705,16 +705,16 @@ with col_main:
             if r_tgt > 0 and price > 0:
                 upside = (r_tgt - price) / price * 100
                 upside_col = t["green"] if upside >= 0 else t["red"]
-                upside_str = f"""
-                <div style="background:{t['bg']};border:1px solid {t['border']};border-radius:10px;
-                            padding:8px 14px;margin-top:10px;display:inline-block;">
-                  <span style="font-size:9.5px;color:{t['muted']};font-weight:800;
-                               text-transform:uppercase;letter-spacing:.07em;">Analyst Target</span><br>
-                  <span style="font-size:14px;font-weight:800;color:{t['text']};">{sym}{r_tgt:,.2f}</span>
-                  <span style="font-size:11px;font-weight:700;color:{upside_col};margin-left:6px;">
-                    ({upside:+.1f}% upside)
-                  </span>
-                </div>"""
+                upside_str = (
+                    f'<div style="background:{t["bg"]};border:1px solid {t["border"]};border-radius:10px;'
+                    f'padding:8px 14px;margin-top:10px;display:inline-block;">'
+                    f'<span style="font-size:9.5px;color:{t["muted"]};font-weight:800;'
+                    f'text-transform:uppercase;letter-spacing:.07em;">Analyst Target</span><br>'
+                    f'<span style="font-size:14px;font-weight:800;color:{t["text"]};">{sym}{r_tgt:,.2f}</span>'
+                    f'<span style="font-size:11px;font-weight:700;color:{upside_col};margin-left:6px;">'
+                    f'({upside:+.1f}% upside)'
+                    f'</span></div>'
+                )
 
             # Hero card
             st.markdown(f"""
@@ -1069,13 +1069,16 @@ with col_main:
                 d.columns=["Ticker","Name","Sector","Price (₹)","MCap (Cr ₹)",
                             "P/E","P/B","ROE %","ROA %","Div Yield %","Beta"]
                 d=d.round(2)
-                st.dataframe(
-                    d.style
-                     .background_gradient(subset=["ROE %"],cmap="RdYlGn",vmin=0,vmax=30)
-                     .background_gradient(subset=["P/E"],cmap="RdYlGn_r",vmin=5,vmax=50)
-                     .format({"MCap (Cr ₹)":"{:,.0f}","Price (₹)":"{:,.2f}"}),
-                    use_container_width=True,hide_index=True
-                )
+                try:
+                    st.dataframe(
+                        d.style
+                         .background_gradient(subset=["ROE %"],cmap="RdYlGn",vmin=0,vmax=30)
+                         .background_gradient(subset=["P/E"],cmap="RdYlGn_r",vmin=5,vmax=50)
+                         .format({"MCap (Cr ₹)":"{:,.0f}","Price (₹)":"{:,.2f}"}),
+                        use_container_width=True,hide_index=True
+                    )
+                except Exception:
+                    st.dataframe(d, use_container_width=True, hide_index=True)
                 st.caption(f"{len(filt)} of {len(df_stocks)} stocks match")
                 # CSV export
                 csv_data = d.to_csv(index=False)
