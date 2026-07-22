@@ -733,44 +733,44 @@ with col_main:
                 )
 
             # Hero card
-            st.markdown(f"""
-            <div style="background:{t['card']};border:1px solid {t['border2']};
-                        border-radius:16px;padding:22px 26px;margin-bottom:16px;">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;
-                          flex-wrap:wrap;gap:16px;">
-                <div>
-                  <div style="font-size:9.5px;font-weight:800;letter-spacing:.1em;
-                              text-transform:uppercase;color:{t['muted']};margin-bottom:4px;">
-                    {fd.get('sector') or '—'}
-                  </div>
-                  <div style="font-size:19px;font-weight:800;color:{t['text']};margin-bottom:10px;">
-                    {fd.get('name') or sel}
-                    <span style="color:{t['muted']};font-size:13px;font-weight:600;">({sel})</span>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-                    <span style="font-size:40px;font-weight:900;color:{t['text']};
-                                letter-spacing:-1.5px;line-height:1;">
-                      {sym}{price:,.2f}
-                    </span>
-                    <span style="background:{chg_dim};color:{chg_col};border-radius:24px;
-                                padding:5px 14px;font-size:13px;font-weight:800;">
-                      {arrow} {chg_sign}{chg:.2f}%
-                    </span>
-                  </div>
-                  {upside_str}
-                </div>
-                <div style="text-align:right;">
-                  <div style="font-size:9.5px;font-weight:800;letter-spacing:.08em;
-                              text-transform:uppercase;color:{t['muted']};margin-bottom:6px;">
-                    Analyst View
-                  </div>
-                  <div style="font-size:16px;font-weight:800;color:{t['text']};">
-                    {rec_text(fd.get('recommendation',''))}
-                  </div>
-                </div>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
+            hero_html = (
+                f'<div style="background:{t["card"]};border:1px solid {t["border2"]};'
+                f'border-radius:16px;padding:22px 26px;margin-bottom:16px;">'
+                f'<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">'
+                f'<div>'
+                f'<div style="font-size:9.5px;font-weight:800;letter-spacing:.1em;'
+                f'text-transform:uppercase;color:{t["muted"]};margin-bottom:4px;">'
+                f'{fd.get("sector") or "—"}'
+                f'</div>'
+                f'<div style="font-size:19px;font-weight:800;color:{t["text"]};margin-bottom:10px;">'
+                f'{fd.get("name") or sel} '
+                f'<span style="color:{t["muted"]};font-size:13px;font-weight:600;">({sel})</span>'
+                f'</div>'
+                f'<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">'
+                f'<span style="font-size:40px;font-weight:900;color:{t["text"]};'
+                f'letter-spacing:-1.5px;line-height:1;">'
+                f'{sym}{price:,.2f}'
+                f'</span>'
+                f'<span style="background:{chg_dim};color:{chg_col};border-radius:24px;'
+                f'padding:5px 14px;font-size:13px;font-weight:800;">'
+                f'{arrow} {chg_sign}{chg:.2f}%'
+                f'</span>'
+                f'</div>'
+                f'{upside_str}'
+                f'</div>'
+                f'<div style="text-align:right;">'
+                f'<div style="font-size:9.5px;font-weight:800;letter-spacing:.08em;'
+                f'text-transform:uppercase;color:{t["muted"]};margin-bottom:6px;">'
+                f'Analyst View'
+                f'</div>'
+                f'<div style="font-size:16px;font-weight:800;color:{t["text"]};">'
+                f'{rec_text(fd.get("recommendation",""))}'
+                f'</div>'
+                f'</div>'
+                f'</div>'
+                f'</div>'
+            )
+            st.markdown(hero_html, unsafe_allow_html=True)
 
             # AI Copilot
             v_str = f"trades at a P/E of {r_pe:.1f}" if r_pe > 0 else "has no trailing P/E listed"
@@ -1173,6 +1173,14 @@ with col_main:
 # ─────────────────────────────────────────────────────────────────────────────
 with col_side:
     st.markdown(f"<p style='color:{t['primary']};font-size:10px;font-weight:800;letter-spacing:.1em;margin:0 0 12px;text-transform:uppercase;'>📋 Your Watchlist</p>", unsafe_allow_html=True)
+
+    with st.expander("＋ Add Stock to Watchlist", expanded=True):
+        new_tk_input = st.text_input("Ticker Symbol", placeholder="e.g. INFY, ZOMATO, RELIANCE.NS", key="add_tk_side_input")
+        if st.button("＋ Add Stock", key="btn_add_tk_side", use_container_width=True):
+            if new_tk_input.strip():
+                add_stock_direct(USER_ID, new_tk_input.strip())
+                st.session_state["sel_ticker"] = new_tk_input.strip().upper()
+                st.rerun()
 
     if not df_stocks.empty:
         for _,row in df_stocks.iterrows():
