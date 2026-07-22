@@ -16,7 +16,7 @@ try:
     _HAS_KEYUP = True
 except ImportError:
     _HAS_KEYUP = False
-import streamlit.components.v1 as components
+
 import pandas as pd
 import plotly.graph_objects as plgo
 import plotly.express as px
@@ -339,34 +339,25 @@ if "username" not in st.session_state:
 if "auth_mode" not in st.session_state:
     st.session_state["auth_mode"] = "login"
 
-# Restore session from localStorage token
+# ── Session restore via query params (replaces localStorage) ─────────────────
+# On login we set ?t=<user_id>. On page load we read it and restore the session.
 if not st.session_state["authenticated"]:
-    qp_token = st.query_params.get("fp_token", "")
+    qp_token = st.query_params.get("t", "")
     if qp_token:
         user = database.get_user_by_token(qp_token)
         if user:
             st.session_state["authenticated"] = True
-            st.session_state["user_id"] = user["user_id"]
-            st.session_state["username"] = user["username"]
+            st.session_state["user_id"]   = user["user_id"]
+            st.session_state["username"]  = user["username"]
         st.query_params.clear()
         st.rerun()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LOGIN / REGISTER SCREEN
 # ─────────────────────────────────────────────────────────────────────────────
-if not st.session_state["authenticated"]:
-    # Try to restore from localStorage
-    components.html("""
-    <script>
-    const tok = localStorage.getItem('fp_token_v2');
-    if (tok) {
-        const u = new URL(window.parent.location.href);
-        u.searchParams.set('fp_token', tok);
-        window.parent.location.href = u.toString();
-    }
-    </script>""", height=0)
 
-    _, cc, _ = st.columns([1, 1.1, 1])
+
+if not st.session_state["authenticated"]:
     with cc:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown(f"""
@@ -420,14 +411,11 @@ if not st.session_state["authenticated"]:
                             is_new = True
 
                         st.session_state["authenticated"] = True
-                        st.session_state["user_id"] = result["user_id"]
-                        st.session_state["username"] = result["username"]
+                        st.session_state["user_id"]   = result["user_id"]
+                        st.session_state["username"]  = result["username"]
 
-                        # Persist session token in localStorage
-                        components.html(
-                            f"<script>localStorage.setItem('fp_token_v2', '{result['user_id']}');</script>",
-                            height=0
-                        )
+                        # Persist via query params (auto-restores on next visit if shared)
+                        st.query_params["t"] = result["user_id"]
 
                         if is_new:
                             st.session_state["needs_seeding"] = True
@@ -480,8 +468,9 @@ df_stocks = pd.DataFrame(stocks) if stocks else pd.DataFrame()
 
 if "sel_ticker" not in st.session_state:
     st.session_state["sel_ticker"] = df_stocks["ticker"].iloc[0] if not df_stocks.empty else None
-if "search_input_key" not in st.session_state:
-    st.session_state["search_input_key"] = ""
+# Use a counter to reset the search widget (avoids setting widget key in session_state)
+if "search_counter" not in st.session_state:
+    st.session_state["search_counter"] = 0
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TOP NAV BAR
@@ -501,15 +490,16 @@ with h1:
     """, unsafe_allow_html=True)
 
 with h2:
+    _s_key = f"search_{st.session_state['search_counter']}"
     if _HAS_KEYUP:
         q_val = _st_keyup(
-            "search", key="search_input_key",
+            "search", key=_s_key,
             placeholder="🔍  Search stocks, indices, ETFs...",
             label_visibility="collapsed", debounce=300
         )
     else:
         q_val = st.text_input(
-            "search", key="search_input_key",
+            "search", key=_s_key,
             placeholder="🔍  Search stocks, indices, ETFs...",
             label_visibility="collapsed"
         )
@@ -563,12 +553,12 @@ if q_val and len(q_val.strip()) >= 2:
                     if st.button("＋ Add", key=f"add_{sym}", use_container_width=True):
                         add_stock_direct(USER_ID, sym)
                         st.session_state["sel_ticker"] = sym
-                        st.session_state["search_input_key"] = ""
+                        st.session_state["search_counter"] += 1  # recreate widget = clear it
                         st.rerun()
                 with c_view:
                     if st.button("View", key=f"vs_{sym}", use_container_width=True):
                         st.session_state["sel_ticker"] = sym
-                        st.session_state["search_input_key"] = ""
+                        st.session_state["search_counter"] += 1
                         st.rerun()
     else:
         st.caption("No results. Try a ticker like RELIANCE.NS or TCS.NS")
@@ -1225,5 +1215,5 @@ with col_side:
     if co.button("⎋ Sign Out",use_container_width=True):
         st.session_state["authenticated"]=False
         st.session_state["user_id"]=""; st.session_state["username"]=""
-        components.html("<script>localStorage.removeItem('fp_token_v2');</script>",height=0)
+        st.query_params.clear()
         st.rerun()
