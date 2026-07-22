@@ -1,9 +1,14 @@
 import sqlite3
 import hashlib
 import random
+import os
 from typing import List, Dict, Any, Optional
 
-DB_PATH = "finpulse.db"
+# On HuggingFace Spaces: DB_DIR=/data (persistent volume)
+# Locally: current directory
+_db_dir = os.environ.get("DB_DIR", ".")
+os.makedirs(_db_dir, exist_ok=True)
+DB_PATH = os.path.join(_db_dir, "finpulse.db")
 
 # 50 Nifty 50 stocks to randomly sample 20 from for new users
 NIFTY_50_POOL = [
