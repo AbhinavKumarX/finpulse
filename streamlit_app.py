@@ -1090,7 +1090,16 @@ with col_main:
                         d.style
                          .background_gradient(subset=["ROE %"],cmap="RdYlGn",vmin=0,vmax=30)
                          .background_gradient(subset=["P/E"],cmap="RdYlGn_r",vmin=5,vmax=50)
-                         .format({"MCap (Cr ₹)":"{:,.0f}","Price (₹)":"{:,.2f}"}),
+                         .format({
+                             "MCap (Cr ₹)": "{:,.0f}",
+                             "Price (₹)": "{:,.2f}",
+                             "P/E": "{:,.2f}",
+                             "P/B": "{:,.2f}",
+                             "ROE %": "{:,.2f}%",
+                             "ROA %": "{:,.2f}%",
+                             "Div Yield %": "{:,.2f}%",
+                             "Beta": "{:,.2f}"
+                         }),
                         use_container_width=True,hide_index=True
                     )
                 except Exception:

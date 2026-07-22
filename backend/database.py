@@ -262,15 +262,25 @@ def upsert_fundamental_data(ticker: str, data: Dict[str, Any]):
             day_change_pct, volume, avg_volume, currency
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(ticker) DO UPDATE SET
-            name=excluded.name, sector=excluded.sector,
-            market_cap=excluded.market_cap, pe_ratio=excluded.pe_ratio,
-            eps=excluded.eps, current_price=excluded.current_price,
-            pb_ratio=excluded.pb_ratio, roe=excluded.roe, roce=excluded.roce,
-            high_52w=excluded.high_52w, low_52w=excluded.low_52w,
-            dividend_yield=excluded.dividend_yield, beta=excluded.beta,
-            target_price=excluded.target_price, recommendation=excluded.recommendation,
-            day_change_pct=excluded.day_change_pct, volume=excluded.volume,
-            avg_volume=excluded.avg_volume, currency=excluded.currency
+            name = CASE WHEN excluded.name IS NOT NULL AND excluded.name != '' AND excluded.name != ticker THEN excluded.name ELSE fundamental_data.name END,
+            sector = CASE WHEN excluded.sector IS NOT NULL AND excluded.sector != 'Unknown' AND excluded.sector != 'Equity' THEN excluded.sector ELSE fundamental_data.sector END,
+            market_cap = CASE WHEN excluded.market_cap > 0 THEN excluded.market_cap ELSE fundamental_data.market_cap END,
+            pe_ratio = CASE WHEN excluded.pe_ratio > 0 THEN excluded.pe_ratio ELSE fundamental_data.pe_ratio END,
+            eps = CASE WHEN excluded.eps != 0 THEN excluded.eps ELSE fundamental_data.eps END,
+            current_price = CASE WHEN excluded.current_price > 0 THEN excluded.current_price ELSE fundamental_data.current_price END,
+            pb_ratio = CASE WHEN excluded.pb_ratio > 0 THEN excluded.pb_ratio ELSE fundamental_data.pb_ratio END,
+            roe = CASE WHEN excluded.roe != 0 THEN excluded.roe ELSE fundamental_data.roe END,
+            roce = CASE WHEN excluded.roce != 0 THEN excluded.roce ELSE fundamental_data.roce END,
+            high_52w = CASE WHEN excluded.high_52w > 0 THEN excluded.high_52w ELSE fundamental_data.high_52w END,
+            low_52w = CASE WHEN excluded.low_52w > 0 THEN excluded.low_52w ELSE fundamental_data.low_52w END,
+            dividend_yield = CASE WHEN excluded.dividend_yield > 0 THEN excluded.dividend_yield ELSE fundamental_data.dividend_yield END,
+            beta = CASE WHEN excluded.beta != 0 THEN excluded.beta ELSE fundamental_data.beta END,
+            target_price = CASE WHEN excluded.target_price > 0 THEN excluded.target_price ELSE fundamental_data.target_price END,
+            recommendation = CASE WHEN excluded.recommendation IS NOT NULL AND excluded.recommendation != 'N/A' THEN excluded.recommendation ELSE fundamental_data.recommendation END,
+            day_change_pct = CASE WHEN excluded.day_change_pct != 0 THEN excluded.day_change_pct ELSE fundamental_data.day_change_pct END,
+            volume = CASE WHEN excluded.volume > 0 THEN excluded.volume ELSE fundamental_data.volume END,
+            avg_volume = CASE WHEN excluded.avg_volume > 0 THEN excluded.avg_volume ELSE fundamental_data.avg_volume END,
+            currency = CASE WHEN excluded.currency IS NOT NULL AND excluded.currency != '' THEN excluded.currency ELSE fundamental_data.currency END
     ''', (
         ticker, data.get('name'), data.get('sector'), data.get('market_cap'),
         data.get('pe_ratio'), data.get('eps'), data.get('current_price'),
